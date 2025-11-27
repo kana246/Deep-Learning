@@ -3,16 +3,12 @@ from pathlib import Path
 import sys
 
 # ========== 外部ファイルの読み込み ==========
-# デバッグ情報表示
 import os
+import importlib.util
 
 # 現在のディレクトリとファイル一覧を確認
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 files_in_dir = os.listdir(current_dir)
-
-# デバッグ用：起動時にファイル情報を表示
-print(f"現在のディレクトリ: {current_dir}")
-print(f"ディレクトリ内のファイル: {files_in_dir}")
 
 # データ読み込み
 ITEMS = {}
@@ -20,64 +16,59 @@ ITEM_CATEGORIES = []
 COMMANDS = []
 COMMAND_CATEGORIES = []
 
+load_status = {
+    'items': False,
+    'commands': False,
+    'items_error': '',
+    'commands_error': ''
+}
+
 # item_data.py の読み込み
 try:
-    # 方法1: 通常のインポート
-    from item_data import ITEMS as LOADED_ITEMS
-    ITEMS = LOADED_ITEMS
+    # 絶対パスを使った確実な読み込み
+    item_data_path = os.path.join(current_dir, 'item_data.py')
     
-    try:
-        from item_data import CATEGORIES as ITEM_CATEGORIES
-    except (ImportError, AttributeError):
-        ITEM_CATEGORIES = list(set([item.get('category', 'その他') for item in ITEMS.values()]))
-        ITEM_CATEGORIES.sort()
-    
-    print(f"✅ item_data.py 読み込み成功: {len(ITEMS)}個")
-    
-except ImportError as e:
-    print(f"❌ item_data.py インポートエラー: {e}")
-    
-    # 方法2: sys.pathを使った読み込み
-    try:
-        sys.path.insert(0, current_dir)
-        import item_data
-        ITEMS = item_data.ITEMS
+    if os.path.exists(item_data_path):
+        spec = importlib.util.spec_from_file_location("item_data", item_data_path)
+        item_data = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(item_data)
+        
+        ITEMS = getattr(item_data, 'ITEMS', {})
         ITEM_CATEGORIES = getattr(item_data, 'CATEGORIES', [])
-        if not ITEM_CATEGORIES:
+        
+        if not ITEM_CATEGORIES and ITEMS:
             ITEM_CATEGORIES = list(set([item.get('category', 'その他') for item in ITEMS.values()]))
             ITEM_CATEGORIES.sort()
-        print(f"✅ item_data.py 読み込み成功(方法2): {len(ITEMS)}個")
-    except Exception as e2:
-        print(f"❌ item_data.py 読み込み失敗: {e2}")
+        
+        load_status['items'] = True
+    else:
+        load_status['items_error'] = f"ファイルが見つかりません: {item_data_path}"
+        
+except Exception as e:
+    load_status['items_error'] = str(e)
 
 # command_data.py の読み込み
 try:
-    from command_data import COMMANDS as LOADED_COMMANDS
-    COMMANDS = LOADED_COMMANDS
+    command_data_path = os.path.join(current_dir, 'command_data.py')
     
-    try:
-        from command_data import COMMAND_CATEGORIES
-    except (ImportError, AttributeError):
-        COMMAND_CATEGORIES = list(set([cmd.get('category', 'その他') for cmd in COMMANDS]))
-        COMMAND_CATEGORIES.sort()
-    
-    print(f"✅ command_data.py 読み込み成功: {len(COMMANDS)}個")
-    
-except ImportError as e:
-    print(f"❌ command_data.py インポートエラー: {e}")
-    
-    # 方法2: sys.pathを使った読み込み
-    try:
-        sys.path.insert(0, current_dir)
-        import command_data
-        COMMANDS = command_data.COMMANDS
+    if os.path.exists(command_data_path):
+        spec = importlib.util.spec_from_file_location("command_data", command_data_path)
+        command_data = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(command_data)
+        
+        COMMANDS = getattr(command_data, 'COMMANDS', [])
         COMMAND_CATEGORIES = getattr(command_data, 'COMMAND_CATEGORIES', [])
-        if not COMMAND_CATEGORIES:
+        
+        if not COMMAND_CATEGORIES and COMMANDS:
             COMMAND_CATEGORIES = list(set([cmd.get('category', 'その他') for cmd in COMMANDS]))
             COMMAND_CATEGORIES.sort()
-        print(f"✅ command_data.py 読み込み成功(方法2): {len(COMMANDS)}個")
-    except Exception as e2:
-        print(f"❌ command_data.py 読み込み失敗: {e2}")
+        
+        load_status['commands'] = True
+    else:
+        load_status['commands_error'] = f"ファイルが見つかりません: {command_data_path}"
+        
+except Exception as e:
+    load_status['commands_error'] = str(e)
 
 # ページ設定
 st.set_page_config(
@@ -297,14 +288,38 @@ st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")
 if menu == "🏠 ホーム":
     st.header("🏠 ホームメニュー")
     
+    # データ読み込み状況を表示
+    if load_status['items'] and load_status['commands']:
+        st.success(f"✅ データ読み込み成功！")
+        col_info1, col_info2 = st.columns(2)
+        with col_info1:
+            st.metric("アイテム数", f"{len(ITEMS)}個")
+        with col_info2:
+            st.metric("コマンド数", f"{len(COMMANDS)}個")
+    else:
+        st.error("⚠️ データファイルの読み込みに問題があります")
+        
+        if not load_status['items']:
+            st.warning(f"❌ item_data.py: {load_status['items_error']}")
+        else:
+            st.success(f"✅ item_data.py: {len(ITEMS)}個読み込み成功")
+            
+        if not load_status['commands']:
+            st.warning(f"❌ command_data.py: {load_status['commands_error']}")
+        else:
+            st.success(f"✅ command_data.py: {len(COMMANDS)}個読み込み成功")
+    
     # デバッグ情報を表示
-    with st.expander("🔍 デバッグ情報", expanded=False):
+    with st.expander("🔍 デバッグ情報（開発者向け）", expanded=False):
         st.markdown("**現在のディレクトリ:**")
         st.code(current_dir)
         st.markdown("**ディレクトリ内のファイル:**")
-        st.code("\n".join(files_in_dir))
-        st.markdown("**Pythonパス:**")
-        st.code("\n".join(sys.path[:5]))
+        st.code("\n".join(sorted(files_in_dir)))
+        st.markdown("**データファイルの存在確認:**")
+        st.code(f"item_data.py: {os.path.exists(os.path.join(current_dir, 'item_data.py'))}")
+        st.code(f"command_data.py: {os.path.exists(os.path.join(current_dir, 'command_data.py'))}")
+    
+    st.markdown("---")
     
     col1, col2 = st.columns(2)
     
@@ -330,10 +345,18 @@ if menu == "🏠 ホーム":
     
     # データ読み込み状況
     if ITEMS and COMMANDS:
-        st.success(f"✅ データ読み込み成功: アイテム{len(ITEMS)}個、コマンド{len(COMMANDS)}個")
+        st.success(f"✅ すべてのデータが正常に読み込まれています")
+        col_stat1, col_stat2 = st.columns(2)
+        with col_stat1:
+            st.info(f"📦 アイテム: {len(ITEMS)}個")
+        with col_stat2:
+            st.info(f"📋 コマンド: {len(COMMANDS)}個")
     else:
-        st.warning("⚠️ データファイルが正しく読み込まれていません")
-        st.info("💡 item_data.py と command_data.py が同じディレクトリにあることを確認してください")
+        st.warning("⚠️ 一部のデータが読み込まれていません")
+        if not ITEMS:
+            st.error(f"❌ item_data.py: {load_status.get('items_error', '不明なエラー')}")
+        if not COMMANDS:
+            st.error(f"❌ command_data.py: {load_status.get('commands_error', '不明なエラー')}")
 
 # ========== コマンド生成画面 ==========
 elif menu == "🛠 コマンド生成":
