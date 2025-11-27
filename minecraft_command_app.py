@@ -3,49 +3,81 @@ from pathlib import Path
 import sys
 
 # ========== 外部ファイルの読み込み ==========
+# デバッグ情報表示
+import os
+
+# 現在のディレクトリとファイル一覧を確認
+current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
+files_in_dir = os.listdir(current_dir)
+
+# デバッグ用：起動時にファイル情報を表示
+print(f"現在のディレクトリ: {current_dir}")
+print(f"ディレクトリ内のファイル: {files_in_dir}")
+
+# データ読み込み
+ITEMS = {}
+ITEM_CATEGORIES = []
+COMMANDS = []
+COMMAND_CATEGORIES = []
+
+# item_data.py の読み込み
 try:
-    # item_data.py からアイテムデータを読み込み
-    from item_data import ITEMS
+    # 方法1: 通常のインポート
+    from item_data import ITEMS as LOADED_ITEMS
+    ITEMS = LOADED_ITEMS
     
-    # カテゴリ情報の取得（存在する場合）
     try:
         from item_data import CATEGORIES as ITEM_CATEGORIES
-    except ImportError:
-        # カテゴリ情報がない場合は自動生成
+    except (ImportError, AttributeError):
         ITEM_CATEGORIES = list(set([item.get('category', 'その他') for item in ITEMS.values()]))
         ITEM_CATEGORIES.sort()
     
-    st.success(f"✅ アイテムデータ読み込み完了: {len(ITEMS)}個")
+    print(f"✅ item_data.py 読み込み成功: {len(ITEMS)}個")
     
 except ImportError as e:
-    st.error(f"❌ item_data.py の読み込みに失敗しました")
-    st.code(str(e))
-    st.info("💡 item_data.py が同じディレクトリにあることを確認してください")
-    # ダミーデータで続行
-    ITEMS = {}
-    ITEM_CATEGORIES = []
-
-try:
-    # command_data.py からコマンドデータを読み込み
-    from command_data import COMMANDS
+    print(f"❌ item_data.py インポートエラー: {e}")
     
-    # コマンドカテゴリの取得（存在する場合）
+    # 方法2: sys.pathを使った読み込み
+    try:
+        sys.path.insert(0, current_dir)
+        import item_data
+        ITEMS = item_data.ITEMS
+        ITEM_CATEGORIES = getattr(item_data, 'CATEGORIES', [])
+        if not ITEM_CATEGORIES:
+            ITEM_CATEGORIES = list(set([item.get('category', 'その他') for item in ITEMS.values()]))
+            ITEM_CATEGORIES.sort()
+        print(f"✅ item_data.py 読み込み成功(方法2): {len(ITEMS)}個")
+    except Exception as e2:
+        print(f"❌ item_data.py 読み込み失敗: {e2}")
+
+# command_data.py の読み込み
+try:
+    from command_data import COMMANDS as LOADED_COMMANDS
+    COMMANDS = LOADED_COMMANDS
+    
     try:
         from command_data import COMMAND_CATEGORIES
-    except ImportError:
-        # カテゴリ情報がない場合は自動生成
+    except (ImportError, AttributeError):
         COMMAND_CATEGORIES = list(set([cmd.get('category', 'その他') for cmd in COMMANDS]))
         COMMAND_CATEGORIES.sort()
     
-    st.success(f"✅ コマンドデータ読み込み完了: {len(COMMANDS)}個")
+    print(f"✅ command_data.py 読み込み成功: {len(COMMANDS)}個")
     
 except ImportError as e:
-    st.error(f"❌ command_data.py の読み込みに失敗しました")
-    st.code(str(e))
-    st.info("💡 command_data.py が同じディレクトリにあることを確認してください")
-    # ダミーデータで続行
-    COMMANDS = []
-    COMMAND_CATEGORIES = []
+    print(f"❌ command_data.py インポートエラー: {e}")
+    
+    # 方法2: sys.pathを使った読み込み
+    try:
+        sys.path.insert(0, current_dir)
+        import command_data
+        COMMANDS = command_data.COMMANDS
+        COMMAND_CATEGORIES = getattr(command_data, 'COMMAND_CATEGORIES', [])
+        if not COMMAND_CATEGORIES:
+            COMMAND_CATEGORIES = list(set([cmd.get('category', 'その他') for cmd in COMMANDS]))
+            COMMAND_CATEGORIES.sort()
+        print(f"✅ command_data.py 読み込み成功(方法2): {len(COMMANDS)}個")
+    except Exception as e2:
+        print(f"❌ command_data.py 読み込み失敗: {e2}")
 
 # ページ設定
 st.set_page_config(
@@ -264,6 +296,15 @@ st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")
 # ========== ホーム画面 ==========
 if menu == "🏠 ホーム":
     st.header("🏠 ホームメニュー")
+    
+    # デバッグ情報を表示
+    with st.expander("🔍 デバッグ情報", expanded=False):
+        st.markdown("**現在のディレクトリ:**")
+        st.code(current_dir)
+        st.markdown("**ディレクトリ内のファイル:**")
+        st.code("\n".join(files_in_dir))
+        st.markdown("**Pythonパス:**")
+        st.code("\n".join(sys.path[:5]))
     
     col1, col2 = st.columns(2)
     
