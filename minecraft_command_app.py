@@ -251,15 +251,46 @@ def search_commands(query, edition):
             # アイテムIDの置換が必要な場合
             if '{item_id}' in str(cmd_template):
                 if ITEMS:
-                    # デフォルトアイテムを設定
-                    default_item = list(ITEMS.values())[0]
-                    default_item_id = default_item.get('id', {}).get(edition, default_item.get('name', ''))
-                    cmd_copy['cmd'] = cmd_template.replace('{item_id}', default_item_id)
-                    cmd_copy['item_name'] = default_item.get('name', '')
+                    # クエリからアイテムを検索
+                    matched_item = None
+                    
+                    # 1. アイテム名での完全一致検索
+                    for item_key, item_data in ITEMS.items():
+                        item_name = item_data.get('name', '').lower()
+                        if item_name in query_lower:
+                            matched_item = item_data
+                            break
+                    
+                    # 2. エイリアスでの検索
+                    if not matched_item:
+                        for item_key, item_data in ITEMS.items():
+                            aliases = item_data.get('aliases', [])
+                            for alias in aliases:
+                                if alias.lower() in query_lower:
+                                    matched_item = item_data
+                                    break
+                            if matched_item:
+                                break
+                    
+                    # 3. マッチしない場合はデフォルト（最初のアイテム）
+                    if not matched_item:
+                        matched_item = list(ITEMS.values())[0]
+                    
+                    # アイテムIDの取得
+                    item_id_data = matched_item.get('id', {})
+                    if isinstance(item_id_data, dict):
+                        item_id = item_id_data.get(edition, '')
+                    else:
+                        item_id = item_id_data
+                    
+                    cmd_copy['cmd'] = cmd_template.replace('{item_id}', item_id)
+                    cmd_copy['item_name'] = matched_item.get('name', '')
+                    cmd_copy['matched_item_key'] = item_key
+                    
                     # 説明文のアイテム名も置換
                     desc = cmd_copy.get('desc', '')
                     if '{item}' in desc:
-                        cmd_copy['desc'] = desc.replace('{item}', default_item.get('name', ''))
+                        cmd_copy['desc'] = desc.replace('{item}', matched_item.get('name', ''))
                 else:
                     cmd_copy['cmd'] = cmd_template
             else:
@@ -433,15 +464,36 @@ elif menu == "🛠 コマンド生成":
             
             for i, cmd in enumerate(candidates):
                 cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
-                with st.expander(f"📋 {cmd_name}: {cmd.get('desc', '')}", expanded=(i==0)):
+                item_name = cmd.get('item_name', '')
+                
+                # タイトル表示
+                if item_name:
+                    expander_title = f"📋 {cmd_name}: {item_name}を与える"
+                else:
+                    expander_title = f"📋 {cmd_name}: {cmd.get('desc', '')}"
+                
+                with st.expander(expander_title, expanded=(i==0)):
                     st.code(cmd.get('cmd', ''), language='bash')
                     
                     # アイテム選択（必要な場合のみ）
                     if '{item_id}' in cmd.get('cmd_template', '') and ITEMS:
-                        st.markdown("**アイテムを変更:**")
+                        st.markdown("---")
+                        st.markdown("**🔄 アイテムを変更:**")
+                        
+                        # 現在選択されているアイテムをデフォルトに
+                        current_item_key = cmd.get('matched_item_key', list(ITEMS.keys())[0])
+                        item_names = [item.get('name', k) for k, item in ITEMS.items()]
+                        current_item_name = ITEMS.get(current_item_key, {}).get('name', item_names[0])
+                        
+                        try:
+                            default_index = item_names.index(current_item_name)
+                        except ValueError:
+                            default_index = 0
+                        
                         selected_item = st.selectbox(
                             "アイテム選択",
-                            options=[item.get('name', k) for k, item in ITEMS.items()],
+                            options=item_names,
+                            index=default_index,
                             key=f"item_select_{i}",
                             label_visibility="collapsed"
                         )
@@ -449,16 +501,21 @@ elif menu == "🛠 コマンド生成":
                         # アイテム変更時にコマンドを更新
                         for item_key, item in ITEMS.items():
                             if item.get('name', item_key) == selected_item:
-                                item_id = item.get('id', {}).get(st.session_state.edition, selected_item)
+                                item_id_data = item.get('id', {})
+                                if isinstance(item_id_data, dict):
+                                    item_id = item_id_data.get(st.session_state.edition, item_key)
+                                else:
+                                    item_id = item_id_data
                                 updated_cmd = cmd['cmd_template'].replace('{item_id}', item_id)
                                 st.code(updated_cmd, language='bash')
                                 break
                     
-                    st.markdown(f"**解説:** {cmd.get('desc', '')}")
+                    st.markdown("---")
+                    st.markdown(f"**📝 解説:** {cmd.get('desc', '')}")
                     if 'note' in cmd and cmd['note']:
-                        st.markdown(f"**補足:** {cmd['note']}")
+                        st.markdown(f"**💡 補足:** {cmd['note']}")
                     if 'category' in cmd:
-                        st.markdown(f"**カテゴリ:** {cmd['category']}")
+                        st.markdown(f"**🏷️ カテゴリ:** {cmd['category']}")
         else:
             st.warning("⚠️ 該当するコマンドが見つかりませんでした")
             st.markdown("**ヒント:** 以下のキーワードを試してください")
