@@ -1,112 +1,21 @@
 import streamlit as st
-from pathlib import Path
-import sys
-
-# ========== 外部ファイルの読み込み ==========
-import os
-import importlib.util
-
-# 現在のディレクトリとファイル一覧を確認
-current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
-files_in_dir = os.listdir(current_dir)
-
-# データ読み込み
-ITEMS = {}
-ITEM_CATEGORIES = []
-COMMANDS = []
-COMMAND_CATEGORIES = []
-
-load_status = {
-    'items': False,
-    'commands': False,
-    'items_error': '',
-    'commands_error': ''
-}
-
-# item_data.py の読み込み
-try:
-    item_data_path = os.path.join(current_dir, 'item_data.py')
-    
-    if os.path.exists(item_data_path):
-        spec = importlib.util.spec_from_file_location("item_data", item_data_path)
-        item_data = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(item_data)
-        
-        # items辞書を読み込む（小文字のitemsに対応）
-        items_dict = getattr(item_data, 'items', None) or getattr(item_data, 'ITEMS', {})
-        
-        # 辞書形式をそのまま使用
-        ITEMS = items_dict
-        
-        # カテゴリ情報の取得
-        ITEM_CATEGORIES = getattr(item_data, 'categories', None) or getattr(item_data, 'CATEGORIES', [])
-        
-        if not ITEM_CATEGORIES and ITEMS:
-            ITEM_CATEGORIES = list(set([item.get('category', 'その他') for item in ITEMS.values()]))
-            ITEM_CATEGORIES.sort()
-        
-        load_status['items'] = True
-        load_status['items_count'] = len(ITEMS)
-    else:
-        load_status['items_error'] = f"ファイルが見つかりません: {item_data_path}"
-        
-except Exception as e:
-    load_status['items_error'] = str(e)
-
-# command_data.py の読み込み（辞書形式に対応）
-try:
-    command_data_path = os.path.join(current_dir, 'command_data.py')
-    
-    if os.path.exists(command_data_path):
-        spec = importlib.util.spec_from_file_location("command_data", command_data_path)
-        command_data = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(command_data)
-        
-        # commands辞書を読み込んで、リスト形式に変換
-        commands_dict = getattr(command_data, 'commands', None) or getattr(command_data, 'COMMANDS', [])
-        
-        if isinstance(commands_dict, dict):
-            # 辞書形式を内部用のリスト形式に変換
-            COMMANDS = []
-            for cmd_key, cmd_data in commands_dict.items():
-                command_entry = {
-                    'key': cmd_key,
-                    'name': cmd_data.get('name', cmd_key),
-                    'desc': cmd_data.get('desc', ''),
-                    'keywords': cmd_data.get('aliases', []),
-                    'template': cmd_data.get('template', {}),
-                    'note': cmd_data.get('note', ''),
-                    'category': cmd_data.get('category', 'その他')
-                }
-                COMMANDS.append(command_entry)
-        elif isinstance(commands_dict, list):
-            COMMANDS = commands_dict
-        
-        # template_requires_item関数も読み込む
-        template_requires_item = getattr(command_data, 'template_requires_item', None)
-        
-        COMMAND_CATEGORIES = list(set([cmd.get('category', 'その他') for cmd in COMMANDS]))
-        COMMAND_CATEGORIES.sort()
-        
-        load_status['commands'] = True
-        load_status['commands_count'] = len(COMMANDS)
-    else:
-        load_status['commands_error'] = f"ファイルが見つかりません: {command_data_path}"
-        
-except Exception as e:
-    load_status['commands_error'] = str(e)
+import pandas as pd
+from item_data import items
+from command_data import commands
+from logic import search_items, search_commands
+from ui import generate_command_candidates
 
 # ページ設定
 st.set_page_config(
-    page_title="Minecraftコマンド生成ツール",
-    page_icon="⛏️",
+    page_title="マインクラフトコマンド生成ツール",
+    page_icon="🎮",
     layout="centered",
 )
 
-# CSSスタイル
+# カスタムCSS
 st.markdown("""
 <style>
-/* ====== サイドバー固定 ====== */
+/* サイドバー固定 */
 [data-testid="stSidebar"] {
     position: fixed !important;
     top: 0;
@@ -134,56 +43,40 @@ st.markdown("""
     margin: 0 !important;
 }
 
-[data-testid="stSidebar"] * {
-    cursor: default !important;
-}
-
-[data-testid="stSidebar"] button,
-[data-testid="stSidebar"] a,
-[data-testid="stSidebar"] input[type="radio"] {
-    cursor: pointer !important;
-}
-
-/* ====== メインエリア ====== */
+/* メインエリア */
 .main {
     margin-left: 280px !important;
 }
 
 .block-container {
-    max-width: 1200px !important;
+    max-width: 1400px !important;
     padding-top: 2rem !important;
 }
 
-/* ====== 見出しのアンカーリンク非表示 ====== */
-h1::before, h2::before, h3::before, h4::before {
-    content: none !important;
-    display: none !important;
+/* テーブルの揺れ対策 */
+.stDataFrame, .stTable {
+    max-width: 100% !important;
 }
 
-h1 a, h2 a, h3 a, h4 a {
+table {
+    table-layout: fixed !important;
+    width: 100% !important;
+}
+
+/* 見出しのアンカーリンクを非表示 */
+h1 a, h2 a, h3 a, h4 a, h5 a, h6 a {
     display: none !important;
     pointer-events: none !important;
 }
 
-[data-testid="stHeaderActionElements"] {
-    display: none !important;
-}
-
-/* ====== アニメーション無効化 ====== */
+/* アニメーション抑制 */
 * {
     animation-duration: 0s !important;
     animation-delay: 0s !important;
     transition-duration: 0s !important;
 }
 
-/* ====== ボタンスタイル ====== */
-.stButton button {
-    width: 100%;
-    border-radius: 8px;
-    font-weight: 500;
-}
-
-/* ====== スマホ対応 ====== */
+/* スマホ対応 */
 @media (max-width: 900px) {
     [data-testid="stSidebar"] {
         position: relative !important;
@@ -207,120 +100,19 @@ if 'page' not in st.session_state:
     st.session_state.page = 'home'
 if 'edition' not in st.session_state:
     st.session_state.edition = '統合版'
-if 'selected_command' not in st.session_state:
-    st.session_state.selected_command = None
 if 'user_input' not in st.session_state:
     st.session_state.user_input = ''
-
-# ========== コマンド検索関数 ==========
-def search_commands(query, edition):
-    """
-    ユーザーの入力からコマンドを検索
-    
-    Args:
-        query (str): 検索キーワード
-        edition (str): Minecraftエディション（統合版/Java版）
-    
-    Returns:
-        list: マッチしたコマンドのリスト
-    """
-    if not COMMANDS:
-        return []
-    
-    results = []
-    query_lower = query.lower()
-    
-    for cmd in COMMANDS:
-        # キーワードマッチング（aliases/keywordsの両方に対応）
-        keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
-        if any(keyword.lower() in query_lower for keyword in keywords):
-            cmd_copy = cmd.copy()
-            
-            # テンプレートの取得
-            template = cmd_copy.get('template', {})
-            
-            # エディション別のテンプレートを取得
-            if isinstance(template, dict):
-                cmd_template = template.get(edition, '')
-                # リスト形式の場合は最初の要素を使用
-                if isinstance(cmd_template, list):
-                    cmd_template = cmd_template[0] if cmd_template else ''
-            else:
-                cmd_template = template
-            
-            # アイテムIDの置換が必要な場合
-            if '{item_id}' in str(cmd_template):
-                if ITEMS:
-                    # デフォルトアイテムを設定
-                    default_item = list(ITEMS.values())[0]
-                    default_item_id = default_item.get('id', {}).get(edition, default_item.get('name', ''))
-                    cmd_copy['cmd'] = cmd_template.replace('{item_id}', default_item_id)
-                    cmd_copy['item_name'] = default_item.get('name', '')
-                    # 説明文のアイテム名も置換
-                    desc = cmd_copy.get('desc', '')
-                    if '{item}' in desc:
-                        cmd_copy['desc'] = desc.replace('{item}', default_item.get('name', ''))
-                else:
-                    cmd_copy['cmd'] = cmd_template
-            else:
-                cmd_copy['cmd'] = cmd_template
-            
-            # cmd_templateを保持（後でアイテム変更に使用）
-            cmd_copy['cmd_template'] = cmd_template
-            
-            results.append(cmd_copy)
-    
-    return results
-
-# ========== アイテム検索関数 ==========
-def search_items(query, category=None):
-    """
-    アイテムを検索
-    
-    Args:
-        query (str): 検索キーワード
-        category (str): カテゴリフィルター
-    
-    Returns:
-        dict: マッチしたアイテムの辞書
-    """
-    if not ITEMS:
-        return {}
-    
-    filtered = ITEMS
-    
-    # キーワード検索（名前とaliasesの両方を検索）
-    if query:
-        query_lower = query.lower()
-        filtered = {}
-        for k, v in ITEMS.items():
-            # 名前での検索
-            if query_lower in v.get('name', '').lower():
-                filtered[k] = v
-                continue
-            # aliasesでの検索
-            aliases = v.get('aliases', [])
-            if any(query_lower in alias.lower() for alias in aliases):
-                filtered[k] = v
-                continue
-    
-    # カテゴリフィルター
-    if category and category != "全て":
-        filtered = {
-            k: v for k, v in filtered.items()
-            if v.get('category') == category
-        }
-    
-    return filtered
-
-# ========== メイン画面 ==========
+if 'selected_command' not in st.session_state:
+    st.session_state.selected_command = None
+if 'command_candidates' not in st.session_state:
+    st.session_state.command_candidates = []
 
 # タイトル
-st.title("⛏️ Minecraftコマンド生成ツール")
+st.title("🎮 マインクラフトコマンド生成ツール")
 st.markdown("---")
 
 # サイドバーメニュー
-st.sidebar.markdown("### 🎮 メニュー")
+st.sidebar.markdown("### 🎯 メニュー")
 menu = st.sidebar.radio(
     "機能選択",
     ["🏠 ホーム", "🛠 コマンド生成", "📘 アイテム図鑑", "🧾 コマンド図鑑", "⚙️ 設定"],
@@ -328,347 +120,267 @@ menu = st.sidebar.radio(
     label_visibility="collapsed"
 )
 
-# データ読み込み状況を表示
+# 設定（サイドバー下部）
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 📊 データ状況")
-st.sidebar.markdown(f"**アイテム:** {len(ITEMS)}個")
-st.sidebar.markdown(f"**コマンド:** {len(COMMANDS)}個")
-st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")
+st.sidebar.markdown("### ⚙️ バージョン設定")
+edition = st.sidebar.selectbox(
+    "Minecraft エディション",
+    ["統合版", "Java版"],
+    index=0 if st.session_state.edition == "統合版" else 1,
+    key="edition_selector"
+)
+st.session_state.edition = edition
 
-# ========== ホーム画面 ==========
+# ホームページ
 if menu == "🏠 ホーム":
     st.header("🏠 ホームメニュー")
     
-    # データ読み込み状況を表示
-    if load_status['items'] and load_status['commands']:
-        st.success(f"✅ データ読み込み成功！")
-        col_info1, col_info2 = st.columns(2)
-        with col_info1:
-            st.metric("アイテム数", f"{len(ITEMS)}個")
-        with col_info2:
-            st.metric("コマンド数", f"{len(COMMANDS)}個")
-    else:
-        st.error("⚠️ データファイルの読み込みに問題があります")
-        
-        if not load_status['items']:
-            st.warning(f"❌ item_data.py: {load_status['items_error']}")
-        else:
-            st.success(f"✅ item_data.py: {len(ITEMS)}個読み込み成功")
-            
-        if not load_status['commands']:
-            st.warning(f"❌ command_data.py: {load_status['commands_error']}")
-        else:
-            st.success(f"✅ command_data.py: {len(COMMANDS)}個読み込み成功")
-    
-    # デバッグ情報を表示
-    with st.expander("🔍 デバッグ情報（開発者向け）", expanded=False):
-        st.markdown("**現在のディレクトリ:**")
-        st.code(current_dir)
-        st.markdown("**ディレクトリ内のファイル:**")
-        st.code("\n".join(sorted(files_in_dir)))
-        st.markdown("**データファイルの存在確認:**")
-        st.code(f"item_data.py: {os.path.exists(os.path.join(current_dir, 'item_data.py'))}")
-        st.code(f"command_data.py: {os.path.exists(os.path.join(current_dir, 'command_data.py'))}")
-    
-    st.markdown("---")
-    
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 📚 主な機能")
-        st.markdown("""
-        - 🛠 **コマンド生成**: 日本語でやりたいことを入力
-        - 📘 **アイテム図鑑**: アイテム一覧と検索
-        - 🧾 **コマンド図鑑**: よく使うコマンド集
-        - ⚙️ **設定**: バージョン選択など
-        """)
+        st.info("### 📊 統計情報")
+        st.metric("登録アイテム数", f"{len(items)}個")
+        st.metric("登録コマンド数", f"{len(commands)}個")
+        st.metric("現在のエディション", st.session_state.edition)
     
     with col2:
-        st.markdown("### 🎯 使い方")
+        st.success("### 📖 使い方")
         st.markdown("""
-        1. 左メニューから機能を選択
-        2. やりたいことを日本語で入力
-        3. コマンドが自動生成されます
-        4. コピー＆ペーストして使用
+        1. **コマンド生成**: やりたいことを日本語で入力
+        2. **アイテム図鑑**: アイテムを検索・参照
+        3. **コマンド図鑑**: コマンドを検索・参照
+        4. **設定**: バージョンを変更
         """)
     
     st.markdown("---")
+    st.markdown("""
+    ### 🚀 主な機能
     
-    # データ読み込み状況
-    if ITEMS and COMMANDS:
-        st.success(f"✅ すべてのデータが正常に読み込まれています")
-        col_stat1, col_stat2 = st.columns(2)
-        with col_stat1:
-            st.info(f"📦 アイテム: {len(ITEMS)}個")
-        with col_stat2:
-            st.info(f"📋 コマンド: {len(COMMANDS)}個")
-    else:
-        st.warning("⚠️ 一部のデータが読み込まれていません")
-        if not ITEMS:
-            st.error(f"❌ item_data.py: {load_status.get('items_error', '不明なエラー')}")
-        if not COMMANDS:
-            st.error(f"❌ command_data.py: {load_status.get('commands_error', '不明なエラー')}")
+    - 🛠 **コマンド生成**: 自然言語からMinecraftコマンドを生成
+    - 📘 **アイテム図鑑**: 全アイテムの検索とID確認
+    - 🧾 **コマンド図鑑**: コマンド一覧と解説
+    - ⚙️ **バージョン対応**: 統合版・Java版の両方に対応
+    
+    左のメニューから機能を選択してください！
+    """)
 
-# ========== コマンド生成画面 ==========
+# コマンド生成ページ
 elif menu == "🛠 コマンド生成":
     st.header("🛠 コマンド生成")
     
-    if not COMMANDS:
-        st.error("❌ コマンドデータが読み込まれていません")
-        st.stop()
-    
     st.markdown("### やりたいことを入力してください")
     user_input = st.text_input(
-        "日本語で入力（例: ダイヤモンドを与える、テレポート、天気を晴れに）",
-        value=st.session_state.user_input,
-        key="command_input"
+        "日本語で入力",
+        placeholder="例: ダイヤモンドが欲しい、飛びたい",
+        key="user_input_box"
     )
     
     if user_input:
-        st.session_state.user_input = user_input
-        candidates = search_commands(user_input, st.session_state.edition)
+        # コマンド候補を生成
+        candidates = generate_command_candidates(
+            user_input, 
+            st.session_state.edition, 
+            items, 
+            commands
+        )
         
         if candidates:
-            st.success(f"✅ {len(candidates)}件のコマンドが見つかりました")
+            st.success(f"✅ {len(candidates)}個のコマンド候補が見つかりました")
             
-            for i, cmd in enumerate(candidates):
-                cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
-                with st.expander(f"📋 {cmd_name}: {cmd.get('desc', '')}", expanded=(i==0)):
-                    st.code(cmd.get('cmd', ''), language='bash')
+            # 候補をドロップダウンで表示
+            labels = []
+            for c in candidates:
+                if "{item}" in c["desc"] and "item_name" in c:
+                    desc = c["desc"].replace("{item}", c["item_name"])
+                else:
+                    desc = c["desc"]
+                labels.append(f"{c['cmd']}({desc})")
+            
+            selected_label = st.selectbox(
+                "コマンド候補を選択",
+                options=labels,
+                key="command_dropdown"
+            )
+            
+            # 選択されたコマンドの詳細を表示
+            if selected_label:
+                index = labels.index(selected_label)
+                selected = candidates[index]
+                
+                st.markdown("---")
+                st.markdown("### ✅ コマンド詳細")
+                
+                # コマンド表示
+                st.code(selected["cmd"], language="bash")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.info(f"**解説**: {selected['desc']}")
+                with col2:
+                    st.info(f"**補足**: {selected['note']}")
+                
+                # アイテム選択（必要な場合）
+                template = selected["cmd_template"]
+                item_visible = (
+                    (isinstance(template, str) and "{item_id}" in template) or
+                    (isinstance(template, list) and any("{item_id}" in t for t in template))
+                )
+                
+                if item_visible:
+                    st.markdown("---")
+                    st.markdown("### 🎯 アイテムを変更")
                     
-                    # アイテム選択（必要な場合のみ）
-                    if '{item_id}' in cmd.get('cmd_template', '') and ITEMS:
-                        st.markdown("**アイテムを変更:**")
-                        selected_item = st.selectbox(
-                            "アイテム選択",
-                            options=[item.get('name', k) for k, item in ITEMS.items()],
-                            key=f"item_select_{i}",
-                            label_visibility="collapsed"
-                        )
-                        
-                        # アイテム変更時にコマンドを更新
-                        for item_key, item in ITEMS.items():
-                            if item.get('name', item_key) == selected_item:
-                                item_id = item.get('id', {}).get(st.session_state.edition, selected_item)
-                                updated_cmd = cmd['cmd_template'].replace('{item_id}', item_id)
-                                st.code(updated_cmd, language='bash')
+                    item_names = [item["name"] for item in items.values()]
+                    selected_item_name = st.selectbox(
+                        "別のアイテムを選択",
+                        options=item_names,
+                        key="item_selector"
+                    )
+                    
+                    # 選択されたアイテムでコマンドを更新
+                    for item in items.values():
+                        if item["name"] == selected_item_name:
+                            item_id = item["id"].get(st.session_state.edition)
+                            if item_id:
+                                if isinstance(template, str):
+                                    new_cmd = template.replace("{item_id}", item_id)
+                                else:
+                                    new_cmd = template[0].replace("{item_id}", item_id)
+                                
+                                st.code(new_cmd, language="bash")
                                 break
-                    
-                    st.markdown(f"**解説:** {cmd.get('desc', '')}")
-                    if 'note' in cmd and cmd['note']:
-                        st.markdown(f"**補足:** {cmd['note']}")
-                    if 'category' in cmd:
-                        st.markdown(f"**カテゴリ:** {cmd['category']}")
         else:
             st.warning("⚠️ 該当するコマンドが見つかりませんでした")
-            st.markdown("**ヒント:** 以下のキーワードを試してください")
-            # 利用可能なキーワードを表示
-            all_keywords = set()
-            for cmd in COMMANDS:
-                keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
-                all_keywords.update(keywords)
-            sample_keywords = list(all_keywords)[:15]
-            cols = st.columns(3)
-            for idx, keyword in enumerate(sample_keywords):
-                with cols[idx % 3]:
-                    st.markdown(f"- {keyword}")
+            st.info("別のキーワードで試してみてください")
 
-# ========== アイテム図鑑 ==========
+# アイテム図鑑ページ
 elif menu == "📘 アイテム図鑑":
     st.header("📘 アイテム図鑑")
     
-    if not ITEMS:
-        st.error("❌ アイテムデータが読み込まれていません")
-        st.stop()
+    # カテゴリフィルタ
+    categories = list(set([item.get("category", "その他") for item in items.values()]))
+    category_filter = st.selectbox(
+        "カテゴリで絞り込み",
+        options=["すべて"] + sorted(categories),
+        key="category_filter"
+    )
     
-    st.markdown("### アイテム一覧")
+    # 検索ボックス
+    search_query = st.text_input(
+        "🔍 アイテム名で検索",
+        placeholder="例: オーク、ダイヤモンド",
+        key="item_search"
+    )
     
-    # カテゴリフィルターと検索
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        search_query = st.text_input(
-            "🔍 アイテムを検索", 
-            placeholder="例: 木、オーク、板材",
-            help="アイテム名やエイリアス（別名）で検索できます"
-        )
-    with col2:
-        selected_category = st.selectbox(
-            "カテゴリ",
-            ["全て"] + ITEM_CATEGORIES,
-            key="item_category"
-        )
-    
-    # アイテム検索
-    filtered_items = search_items(search_query, selected_category)
-    
-    if filtered_items:
-        st.info(f"📦 {len(filtered_items)}個のアイテムが見つかりました")
+    # 検索実行
+    if search_query:
+        results = search_items(search_query, None if category_filter == "すべて" else category_filter)
         
-        for item_key, item in filtered_items.items():
-            category = item.get('category', 'その他')
-            item_name = item.get('name', item_key)
-            item_desc = item.get('desc', '')
+        if results:
+            st.success(f"✅ {len(results)}個のアイテムが見つかりました")
             
-            # エイリアス（別名）の取得
-            aliases = item.get('aliases', [])
-            alias_display = f"別名: {', '.join(aliases[:5])}" if aliases else ""
-            if len(aliases) > 5:
-                alias_display += f"...他{len(aliases)-5}個"
-            
-            with st.expander(f"📦 {item_name} [{category}]", expanded=False):
-                if item_desc:
-                    st.markdown(f"**説明:** {item_desc}")
-                
-                col1, col2 = st.columns(2)
-                
-                # IDの取得
-                item_id_data = item.get('id', {})
-                
-                with col1:
-                    st.markdown(f"**統合版ID:**")
-                    if isinstance(item_id_data, dict):
-                        bedrock_id = item_id_data.get('統合版', item_key)
-                    else:
-                        bedrock_id = item_id_data
-                    st.code(bedrock_id)
+            # 結果を表示
+            for item_id, item in results[:20]:  # 最大20件表示
+                with st.expander(f"📦 {item['name']}"):
+                    col1, col2 = st.columns(2)
                     
-                with col2:
-                    st.markdown(f"**Java版ID:**")
-                    if isinstance(item_id_data, dict):
-                        java_id = item_id_data.get('Java版', f'minecraft:{item_key}')
-                    else:
-                        java_id = item_id_data
-                    st.code(java_id)
-                
-                # スタックサイズ
-                stack_size = item.get('stack_size', 64)
-                st.markdown(f"**スタックサイズ:** {stack_size}")
-                
-                # エイリアス表示
-                if aliases:
-                    with st.expander("🏷️ 検索用エイリアス", expanded=False):
-                        st.markdown(", ".join(aliases))
-                
-                # giveコマンドのサンプル
-                st.markdown("**取得コマンド:**")
-                current_id = bedrock_id if st.session_state.edition == '統合版' else java_id
-                
-                col_cmd1, col_cmd2 = st.columns(2)
-                with col_cmd1:
-                    st.markdown("*1個:*")
-                    give_cmd_1 = f"/give @s {current_id} 1"
-                    st.code(give_cmd_1, language='bash')
-                with col_cmd2:
-                    st.markdown(f"*{stack_size}個:*")
-                    give_cmd_stack = f"/give @s {current_id} {stack_size}"
-                    st.code(give_cmd_stack, language='bash')
+                    with col1:
+                        st.write(f"**説明**: {item['desc']}")
+                        st.write(f"**カテゴリ**: {item.get('category', 'その他')}")
+                        st.write(f"**スタックサイズ**: {item.get('stack_size', 64)}")
+                    
+                    with col2:
+                        st.write(f"**統合版ID**: `{item['id'].get('統合版', 'なし')}`")
+                        st.write(f"**Java版ID**: `{item['id'].get('Java版', 'なし')}`")
+                    
+                    # エイリアス表示
+                    if item.get("aliases"):
+                        st.write(f"**別名**: {', '.join(item['aliases'][:5])}")
+        else:
+            st.warning("⚠️ 該当するアイテムが見つかりませんでした")
     else:
-        st.warning("該当するアイテムが見つかりませんでした")
+        st.info("👆 上の検索ボックスにキーワードを入力してください")
 
-# ========== コマンド図鑑 ==========
+# コマンド図鑑ページ
 elif menu == "🧾 コマンド図鑑":
     st.header("🧾 コマンド図鑑")
     
-    if not COMMANDS:
-        st.error("❌ コマンドデータが読み込まれていません")
-        st.stop()
-    
-    st.markdown("### よく使うコマンド一覧")
-    
-    # カテゴリフィルター
-    selected_cmd_category = st.selectbox(
-        "カテゴリで絞り込み",
-        ["全て"] + COMMAND_CATEGORIES,
-        key="command_category"
+    # 検索ボックス
+    search_query = st.text_input(
+        "🔍 コマンドで検索",
+        placeholder="例: give、付与、アイテム",
+        key="command_search"
     )
     
-    filtered_commands = COMMANDS
-    if selected_cmd_category != "全て":
-        filtered_commands = [
-            cmd for cmd in COMMANDS 
-            if cmd.get('category') == selected_cmd_category
-        ]
-    
-    st.info(f"📌 {len(filtered_commands)}個のコマンドが見つかりました")
-    
-    for i, cmd in enumerate(filtered_commands):
-        category_tag = cmd.get('category', 'その他')
-        cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
+    if search_query:
+        results = search_commands(search_query)
         
-        # テンプレートの取得
-        template = cmd.get('template', {})
-        if isinstance(template, dict):
-            cmd_template = template.get(st.session_state.edition, '')
-            if isinstance(cmd_template, list):
-                cmd_template = cmd_template[0] if cmd_template else ''
-        else:
-            cmd_template = template
-        
-        with st.expander(f"📌 [{category_tag}] {cmd_name}", expanded=False):
-            st.code(cmd_template, language='bash')
-            st.markdown(f"**解説:** {cmd.get('desc', '')}")
-            if 'note' in cmd and cmd['note']:
-                st.markdown(f"**補足:** {cmd['note']}")
+        if results:
+            st.success(f"✅ {len(results)}個のコマンドが見つかりました")
             
-            # キーワード表示
-            keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
-            if keywords:
-                st.markdown(f"**検索キーワード:** {', '.join(keywords[:10])}")
-                if len(keywords) > 10:
-                    st.markdown(f"*...他{len(keywords)-10}個*")
+            for cmd_key, cmd in results:
+                with st.expander(f"🎮 {cmd['name']} ({cmd_key})"):
+                    st.write(f"**説明**: {cmd['desc']}")
+                    st.write(f"**補足**: {cmd['note']}")
+                    
+                    # テンプレート表示
+                    template = cmd['template']
+                    if isinstance(template, dict):
+                        for edition, tmpl in template.items():
+                            if isinstance(tmpl, list):
+                                st.code(tmpl[0], language="bash")
+                            else:
+                                st.code(tmpl, language="bash")
+                            break
+                    
+                    # エイリアス表示
+                    if cmd.get("aliases"):
+                        st.write(f"**別名**: {', '.join(cmd['aliases'][:10])}")
+        else:
+            st.warning("⚠️ 該当するコマンドが見つかりませんでした")
+    else:
+        st.info("👆 上の検索ボックスにキーワードを入力してください")
+        
+        # 全コマンド一覧を表示
+        st.markdown("---")
+        st.markdown("### 📋 全コマンド一覧")
+        
+        for cmd_key, cmd in commands.items():
+            with st.expander(f"🎮 {cmd['name']}"):
+                st.write(f"**説明**: {cmd['desc']}")
+                st.write(f"**補足**: {cmd['note']}")
 
-# ========== 設定画面 ==========
+# 設定ページ
 elif menu == "⚙️ 設定":
-    st.header("⚙️ 設定")
+    st.header("⚙️ 設定メニュー")
     
-    st.markdown("### Minecraftバージョン")
-    edition = st.radio(
-        "バージョンを選択",
-        ["統合版", "Java版"],
-        index=0 if st.session_state.edition == "統合版" else 1,
-        key="edition_selector"
-    )
-    st.session_state.edition = edition
-    
-    st.success(f"✅ 現在のバージョン: **{st.session_state.edition}**")
+    st.markdown("### 🎮 バージョン設定")
+    st.info(f"現在のエディション: **{st.session_state.edition}**")
+    st.markdown("エディションはサイドバーから変更できます")
     
     st.markdown("---")
-    st.markdown("### 📊 データファイル情報")
+    st.markdown("### 📊 システム情報")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("アイテム数", f"{len(ITEMS)}個")
-        st.metric("アイテムカテゴリ", f"{len(ITEM_CATEGORIES)}種類")
+        st.metric("登録アイテム数", f"{len(items)}個")
     with col2:
-        st.metric("コマンド数", f"{len(COMMANDS)}個")
-        st.metric("コマンドカテゴリ", f"{len(COMMAND_CATEGORIES)}種類")
+        st.metric("登録コマンド数", f"{len(commands)}個")
+    with col3:
+        st.metric("対応エディション", "2種類")
     
     st.markdown("---")
-    st.markdown("### 📁 ファイル構成")
-    st.code("""
-プロジェクトフォルダ/
-├── app.py (このファイル)
-├── item_data.py (アイテムデータ)
-└── command_data.py (コマンドデータ)
+    st.markdown("### 📝 クレジット")
+    st.markdown("""
+    **Minecraft コマンド生成ツール**
+    
+    - Gradio版からStreamlit版に移植
+    - 統合版・Java版の両方に対応
+    - 自然言語からコマンドを生成
+    
+    *Powered by Streamlit*
     """)
-    
-    st.markdown("---")
-    st.markdown("### 📚 その他の機能（準備中）")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("📖 サイトの使い方"):
-            st.info("使い方ページは準備中です")
-        if st.button("📈 コマンド履歴"):
-            st.info("履歴機能は準備中です")
-    
-    with col2:
-        if st.button("🖼 背景を変更"):
-            st.info("背景変更機能は準備中です")
-        if st.button("📝 パッチノート"):
-            st.info("パッチノートは準備中です")
 
 # フッター
 st.markdown("---")
-st.markdown("*Minecraftコマンド生成ツール - Powered by Streamlit*")
-st.markdown("🎮 統合版・Java版両対応")
+st.markdown("*Minecraft コマンド生成ツール - Powered by Streamlit*")
