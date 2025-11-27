@@ -1,60 +1,110 @@
 import streamlit as st
-import sys
+import base64
 from pathlib import Path
-
-# プロジェクトルートをパスに追加
-sys.path.append(str(Path(__file__).parent))
-
-from data.items import items
-from data.commands import commands
-from utils.search import search_items, search_commands, filter_by_keyword
-from utils.generator import generate_command
 
 # ページ設定
 st.set_page_config(
-    page_title="マイクラコマンド生成ツール",
-    page_icon="🎮",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="Minecraftコマンド生成ツール",
+    page_icon="⛏️",
+    layout="centered",
 )
 
-# カスタムCSS
+# CSSスタイル
 st.markdown("""
 <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #2E8B57;
-        text-align: center;
-        padding: 1rem 0;
+/* ====== サイドバー固定 ====== */
+[data-testid="stSidebar"] {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    width: 280px !important;
+    height: 100vh !important;
+    background-color: #e8f5e9 !important;
+    border-right: 1px solid #e0e0e0;
+    padding: 0 !important;
+    margin: 0 !important;
+    z-index: 1000000;
+    overflow: hidden;
+    border-radius: 0px 30px 30px 0;
+}
+
+[data-testid="stSidebarUserContent"] {
+    padding-top: 3rem !important;
+    margin-top: 0 !important;
+}
+
+[data-testid="stSidebarContent"] {
+    overflow-y: auto !important;
+    height: 100vh !important;
+    padding: 0 1rem 1rem 1rem !important;
+    margin: 0 !important;
+}
+
+[data-testid="stSidebar"] * {
+    cursor: default !important;
+}
+
+[data-testid="stSidebar"] button,
+[data-testid="stSidebar"] a,
+[data-testid="stSidebar"] input[type="radio"] {
+    cursor: pointer !important;
+}
+
+/* ====== メインエリア ====== */
+.main {
+    margin-left: 280px !important;
+}
+
+.block-container {
+    max-width: 1200px !important;
+    padding-top: 2rem !important;
+}
+
+/* ====== 見出しのアンカーリンク非表示 ====== */
+h1::before, h2::before, h3::before, h4::before {
+    content: none !important;
+    display: none !important;
+}
+
+h1 a, h2 a, h3 a, h4 a {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+[data-testid="stHeaderActionElements"] {
+    display: none !important;
+}
+
+/* ====== アニメーション無効化 ====== */
+* {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    transition-duration: 0s !important;
+}
+
+/* ====== ボタンスタイル ====== */
+.stButton button {
+    width: 100%;
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+/* ====== スマホ対応 ====== */
+@media (max-width: 900px) {
+    [data-testid="stSidebar"] {
+        position: relative !important;
+        width: 100% !important;
+        height: auto !important;
+        border-right: none !important;
     }
-    .sub-header {
-        font-size: 1.5rem;
-        color: #4169E1;
-        margin-top: 1rem;
+    .main {
+        margin-left: 0 !important;
     }
-    .command-box {
-        background-color: #1E1E1E;
-        color: #00FF00;
-        padding: 1rem;
-        border-radius: 5px;
-        font-family: 'Courier New', monospace;
-        font-size: 1.1rem;
-        margin: 1rem 0;
+    .block-container {
+        max-width: 100% !important;
+        padding: 1rem !important;
     }
-    .item-card {
-        border: 2px solid #4169E1;
-        border-radius: 10px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        background-color: #F0F8FF;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 10px;
-        height: 3rem;
-        font-size: 1.1rem;
-    }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -65,230 +115,222 @@ if 'edition' not in st.session_state:
     st.session_state.edition = '統合版'
 if 'selected_command' not in st.session_state:
     st.session_state.selected_command = None
-if 'selected_item' not in st.session_state:
-    st.session_state.selected_item = None
+if 'user_input' not in st.session_state:
+    st.session_state.user_input = ''
 
-# サイドバー
-with st.sidebar:
-    st.markdown("### ⚙️ 設定")
-    st.session_state.edition = st.radio(
-        "Minecraftバージョン",
-        options=['統合版', 'Java版'],
-        index=0 if st.session_state.edition == '統合版' else 1
-    )
-    
-    st.markdown("---")
-    st.markdown("### 📚 ナビゲーション")
-    
-    if st.button("🏠 ホーム", use_container_width=True):
-        st.session_state.page = 'home'
-        st.rerun()
-    
-    if st.button("🎮 コマンド生成", use_container_width=True):
-        st.session_state.page = 'command'
-        st.rerun()
-    
-    if st.button("📘 アイテム図鑑", use_container_width=True):
-        st.session_state.page = 'items'
-        st.rerun()
-    
-    if st.button("🧾 コマンド一覧", use_container_width=True):
-        st.session_state.page = 'command_list'
-        st.rerun()
+# サンプルデータ（item_data.py と command_data.py の代わり）
+ITEMS = {
+    'diamond': {'name': 'ダイヤモンド', 'id': {'統合版': 'diamond', 'Java版': 'minecraft:diamond'}},
+    'iron_ingot': {'name': '鉄インゴット', 'id': {'統合版': 'iron_ingot', 'Java版': 'minecraft:iron_ingot'}},
+    'gold_ingot': {'name': '金インゴット', 'id': {'統合版': 'gold_ingot', 'Java版': 'minecraft:gold_ingot'}},
+}
 
-# ホームページ
-if st.session_state.page == 'home':
-    st.markdown('<div class="main-header">🎮 マイクラコマンド生成ツール</div>', unsafe_allow_html=True)
+COMMANDS = [
+    {
+        'keywords': ['アイテム', '与える', 'あげる'],
+        'cmd_template': '/give @s {item_id} 1',
+        'desc': '{item}を1個与える',
+        'note': '@sは自分自身を指定'
+    },
+    {
+        'keywords': ['テレポート', 'TP', '移動'],
+        'cmd_template': '/tp @s ~ ~10 ~',
+        'desc': '自分を10ブロック上に移動',
+        'note': '~は相対座標'
+    },
+    {
+        'keywords': ['天気', '晴れ', '快晴'],
+        'cmd_template': '/weather clear',
+        'desc': '天気を晴れにする',
+        'note': '雨や雷を止めます'
+    },
+]
+
+def search_commands(query, edition):
+    """コマンドを検索"""
+    results = []
+    query_lower = query.lower()
     
-    st.markdown("---")
+    for cmd in COMMANDS:
+        if any(keyword in query_lower for keyword in cmd['keywords']):
+            cmd_copy = cmd.copy()
+            if '{item_id}' in cmd_copy['cmd_template']:
+                # デフォルトアイテムを設定
+                default_item = list(ITEMS.values())[0]
+                cmd_copy['cmd'] = cmd_copy['cmd_template'].replace('{item_id}', default_item['id'][edition])
+                cmd_copy['item_name'] = default_item['name']
+            else:
+                cmd_copy['cmd'] = cmd_copy['cmd_template']
+            results.append(cmd_copy)
+    
+    return results
+
+# タイトル
+st.title("⛏️ Minecraftコマンド生成ツール")
+st.markdown("---")
+
+# サイドバーメニュー
+st.sidebar.markdown("### 🎮 メニュー")
+menu = st.sidebar.radio(
+    "機能選択",
+    ["🏠 ホーム", "🛠 コマンド生成", "📘 アイテム図鑑", "🧾 コマンド図鑑", "⚙️ 設定"],
+    key="main_menu",
+    label_visibility="collapsed"
+)
+
+# ホーム画面
+if menu == "🏠 ホーム":
+    st.header("🏠 ホームメニュー")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 🚀 主な機能")
+        st.markdown("### 📚 主な機能")
         st.markdown("""
-        - 🗣️ **自然言語でコマンド生成**  
-          「ダイヤの剣がほしい」と入力するだけ！
-          
-        - 📘 **充実したアイテム図鑑**  
-          全アイテムを検索・確認可能
-          
-        - 🎯 **統合版・Java版対応**  
-          両バージョンに完全対応
-          
-        - ⚡ **即座にコピー可能**  
-          生成されたコマンドをワンクリックでコピー
+        - 🛠 **コマンド生成**: 日本語でやりたいことを入力
+        - 📘 **アイテム図鑑**: アイテム一覧と検索
+        - 🧾 **コマンド図鑑**: よく使うコマンド集
+        - ⚙️ **設定**: バージョン選択など
         """)
     
     with col2:
-        st.markdown("### 📖 使い方")
+        st.markdown("### 🎯 使い方")
         st.markdown("""
-        1. サイドバーでバージョンを選択
-        2. 「コマンド生成」をクリック
-        3. やりたいことを日本語で入力
-        4. 候補から選択してコマンドを生成
-        5. コマンドをコピーして使用
+        1. 左メニューから機能を選択
+        2. やりたいことを日本語で入力
+        3. コマンドが自動生成されます
+        4. コピー＆ペーストして使用
         """)
     
     st.markdown("---")
-    
-    st.info(f"📌 現在の設定: **{st.session_state.edition}**")
-    
-    # クイックアクセス
-    st.markdown("### ⚡ クイックアクセス")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("🎯 よく使うコマンド", use_container_width=True):
-            st.session_state.page = 'command'
-            st.rerun()
-    
-    with col2:
-        if st.button("🔍 アイテム検索", use_container_width=True):
-            st.session_state.page = 'items'
-            st.rerun()
-    
-    with col3:
-        if st.button("📋 コマンド例", use_container_width=True):
-            st.session_state.page = 'command_list'
-            st.rerun()
+    st.info("💡 左のサイドバーから機能を選択してください")
 
-# コマンド生成ページ
-elif st.session_state.page == 'command':
-    st.markdown('<div class="main-header">🛠️ コマンド生成</div>', unsafe_allow_html=True)
+# コマンド生成画面
+elif menu == "🛠 コマンド生成":
+    st.header("🛠 コマンド生成")
     
-    st.markdown("---")
-    
-    # 入力エリア
+    st.markdown("### やりたいことを入力してください")
     user_input = st.text_input(
-        "やりたいことを日本語で入力してください",
-        placeholder="例: ダイヤの剣がほしい、村人を召喚したい、飛びたい",
-        help="自然な日本語で入力してください"
+        "日本語で入力（例: ダイヤモンドを与える、テレポート、天気を晴れに）",
+        value=st.session_state.user_input,
+        key="command_input"
     )
     
     if user_input:
-        # コマンド候補を検索
-        candidates = filter_by_keyword(user_input, st.session_state.edition, commands, items)
+        st.session_state.user_input = user_input
+        candidates = search_commands(user_input, st.session_state.edition)
         
         if candidates:
-            st.success(f"✅ {len(candidates)}件の候補が見つかりました")
+            st.success(f"✅ {len(candidates)}件のコマンドが見つかりました")
             
-            # 候補を表示
-            for idx, candidate in enumerate(candidates):
-                with st.expander(f"💡 {candidate['display']}", expanded=(idx == 0)):
-                    st.markdown(f"**説明**: {candidate['desc']}")
+            for i, cmd in enumerate(candidates):
+                with st.expander(f"📋 {cmd['desc']}", expanded=(i==0)):
+                    st.code(cmd['cmd'], language='bash')
                     
-                    # アイテムが必要な場合
-                    if candidate.get('needs_item'):
-                        item_names = [item['name'] for item in items.values()]
+                    # アイテム選択（必要な場合のみ）
+                    if '{item_id}' in cmd['cmd_template']:
+                        st.markdown("**アイテムを変更:**")
                         selected_item = st.selectbox(
-                            "アイテムを選択",
-                            options=item_names,
-                            key=f"item_select_{idx}"
+                            "アイテム選択",
+                            options=[item['name'] for item in ITEMS.values()],
+                            key=f"item_select_{i}",
+                            label_visibility="collapsed"
                         )
                         
-                        # 選択されたアイテムのIDを取得
-                        for item_id, item_data in items.items():
-                            if item_data['name'] == selected_item:
-                                selected_item_id = item_data['id'].get(st.session_state.edition, '')
+                        # アイテム変更時にコマンドを更新
+                        for item in ITEMS.values():
+                            if item['name'] == selected_item:
+                                updated_cmd = cmd['cmd_template'].replace(
+                                    '{item_id}', 
+                                    item['id'][st.session_state.edition]
+                                )
+                                st.code(updated_cmd, language='bash')
                                 break
-                        
-                        generated_cmd = candidate['template'].replace('{item_id}', selected_item_id)
-                    else:
-                        generated_cmd = candidate['cmd']
                     
-                    # コマンド表示
-                    st.markdown(f'<div class="command-box">{generated_cmd}</div>', unsafe_allow_html=True)
-                    
-                    # コピーボタン
-                    if st.button(f"📋 コマンドをコピー", key=f"copy_{idx}"):
-                        st.code(generated_cmd, language="bash")
-                        st.success("✅ コマンドを表示しました！ゲーム内でコピー&ペーストしてください")
-                    
-                    if candidate.get('note'):
-                        st.info(f"ℹ️ {candidate['note']}")
+                    st.markdown(f"**解説:** {cmd['desc']}")
+                    if 'note' in cmd:
+                        st.markdown(f"**補足:** {cmd['note']}")
         else:
             st.warning("⚠️ 該当するコマンドが見つかりませんでした")
-            st.markdown("""
-            **ヒント:**
-            - 「ダイヤがほしい」「村人を出したい」など、シンプルな表現で試してください
-            - アイテム図鑑で正確な名前を確認できます
-            """)
+            st.markdown("**ヒント:** 以下のキーワードを試してください")
+            st.markdown("- アイテムを与える")
+            st.markdown("- テレポート")
+            st.markdown("- 天気を変える")
 
-# アイテム図鑑ページ
-elif st.session_state.page == 'items':
-    st.markdown('<div class="main-header">📘 アイテム図鑑</div>', unsafe_allow_html=True)
+# アイテム図鑑
+elif menu == "📘 アイテム図鑑":
+    st.header("📘 アイテム図鑑")
     
-    st.markdown("---")
+    st.markdown("### アイテム一覧")
     
-    # 検索バー
-    search_query = st.text_input(
-        "🔍 アイテムを検索",
-        placeholder="アイテム名またはキーワードを入力"
-    )
+    search_query = st.text_input("🔍 アイテムを検索", placeholder="例: ダイヤ、鉄")
     
-    # カテゴリフィルター
-    categories = list(set([item.get('category', 'その他') for item in items.values()]))
-    selected_category = st.selectbox("カテゴリ", options=['すべて'] + sorted(categories))
+    filtered_items = ITEMS
+    if search_query:
+        filtered_items = {
+            k: v for k, v in ITEMS.items() 
+            if search_query.lower() in v['name'].lower()
+        }
     
-    # 検索結果
-    if search_query or selected_category != 'すべて':
-        results = search_items(search_query, selected_category if selected_category != 'すべて' else None, items)
-        
-        st.markdown(f"### 検索結果: {len(results)}件")
-        
-        # グリッド表示
-        cols = st.columns(3)
-        for idx, (item_id, item_data) in enumerate(results):
-            with cols[idx % 3]:
-                with st.container():
-                    st.markdown(f'<div class="item-card">', unsafe_allow_html=True)
-                    st.markdown(f"**{item_data['name']}**")
-                    st.caption(item_data.get('desc', '説明なし'))
-                    
-                    edition_id = item_data['id'].get(st.session_state.edition, 'N/A')
-                    st.code(edition_id, language="text")
-                    
-                    if st.button(f"詳細を見る", key=f"detail_{item_id}"):
-                        with st.expander("詳細情報", expanded=True):
-                            st.markdown(f"**カテゴリ**: {item_data.get('category', '未分類')}")
-                            st.markdown(f"**スタック数**: {item_data.get('stack_size', 64)}")
-                            if item_data.get('aliases'):
-                                st.markdown(f"**別名**: {', '.join(item_data['aliases'][:5])}")
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
+    if filtered_items:
+        for item_key, item in filtered_items.items():
+            with st.expander(f"📦 {item['name']}", expanded=False):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"**統合版ID:**")
+                    st.code(item['id']['統合版'])
+                with col2:
+                    st.markdown(f"**Java版ID:**")
+                    st.code(item['id']['Java版'])
     else:
-        st.info("🔍 検索ワードを入力するか、カテゴリを選択してください")
+        st.warning("該当するアイテムが見つかりませんでした")
 
-# コマンド一覧ページ
-elif st.session_state.page == 'command_list':
-    st.markdown('<div class="main-header">🧾 コマンド一覧</div>', unsafe_allow_html=True)
+# コマンド図鑑
+elif menu == "🧾 コマンド図鑑":
+    st.header("🧾 コマンド図鑑")
+    
+    st.markdown("### よく使うコマンド一覧")
+    
+    for i, cmd in enumerate(COMMANDS):
+        with st.expander(f"📌 {cmd['desc']}", expanded=False):
+            st.code(cmd['cmd_template'], language='bash')
+            st.markdown(f"**解説:** {cmd['desc']}")
+            if 'note' in cmd:
+                st.markdown(f"**補足:** {cmd['note']}")
+            st.markdown(f"**検索キーワード:** {', '.join(cmd['keywords'])}")
+
+# 設定画面
+elif menu == "⚙️ 設定":
+    st.header("⚙️ 設定")
+    
+    st.markdown("### Minecraftバージョン")
+    edition = st.radio(
+        "バージョンを選択",
+        ["統合版", "Java版"],
+        index=0 if st.session_state.edition == "統合版" else 1,
+        key="edition_selector"
+    )
+    st.session_state.edition = edition
+    
+    st.success(f"✅ 現在のバージョン: **{st.session_state.edition}**")
     
     st.markdown("---")
+    st.markdown("### 📚 その他の機能（準備中）")
     
-    for cmd_key, cmd_data in commands.items():
-        with st.expander(f"📌 {cmd_data['name']} - {cmd_data['desc']}"):
-            st.markdown(f"**コマンドキー**: `{cmd_key}`")
-            
-            # テンプレート表示
-            template = cmd_data['template'].get(st.session_state.edition, '')
-            if isinstance(template, list):
-                st.markdown("**テンプレート例:**")
-                for t in template:
-                    st.code(t, language="bash")
-            else:
-                st.code(template, language="bash")
-            
-            # エイリアス表示
-            if cmd_data.get('aliases'):
-                st.markdown(f"**検索キーワード**: {', '.join(cmd_data['aliases'][:10])}")
-            
-            if cmd_data.get('note'):
-                st.info(f"ℹ️ {cmd_data['note']}")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📖 サイトの使い方"):
+            st.info("使い方ページは準備中です")
+        if st.button("📈 コマンド履歴"):
+            st.info("履歴機能は準備中です")
+    
+    with col2:
+        if st.button("🖼 背景を変更"):
+            st.info("背景変更機能は準備中です")
+        if st.button("📝 パッチノート"):
+            st.info("パッチノートは準備中です")
 
 # フッター
 st.markdown("---")
-st.markdown(
-    '<div style="text-align: center; color: gray;">マイクラコマンド生成ツール - Powered by Streamlit</div>',
-    unsafe_allow_html=True
-)
+st.markdown("*Minecraftコマンド生成ツール - Powered by Streamlit*")
+st.markdown("🎮 統合版・Java版両対応")
