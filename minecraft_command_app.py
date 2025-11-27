@@ -25,7 +25,6 @@ load_status = {
 
 # item_data.py の読み込み
 try:
-    # 絶対パスを使った確実な読み込み
     item_data_path = os.path.join(current_dir, 'item_data.py')
     
     if os.path.exists(item_data_path):
@@ -33,21 +32,28 @@ try:
         item_data = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(item_data)
         
-        ITEMS = getattr(item_data, 'ITEMS', {})
-        ITEM_CATEGORIES = getattr(item_data, 'CATEGORIES', [])
+        # items辞書を読み込む（小文字のitemsに対応）
+        items_dict = getattr(item_data, 'items', None) or getattr(item_data, 'ITEMS', {})
+        
+        # 辞書形式をそのまま使用
+        ITEMS = items_dict
+        
+        # カテゴリ情報の取得
+        ITEM_CATEGORIES = getattr(item_data, 'categories', None) or getattr(item_data, 'CATEGORIES', [])
         
         if not ITEM_CATEGORIES and ITEMS:
             ITEM_CATEGORIES = list(set([item.get('category', 'その他') for item in ITEMS.values()]))
             ITEM_CATEGORIES.sort()
         
         load_status['items'] = True
+        load_status['items_count'] = len(ITEMS)
     else:
         load_status['items_error'] = f"ファイルが見つかりません: {item_data_path}"
         
 except Exception as e:
     load_status['items_error'] = str(e)
 
-# command_data.py の読み込み
+# command_data.py の読み込み（辞書形式に対応）
 try:
     command_data_path = os.path.join(current_dir, 'command_data.py')
     
@@ -56,14 +62,34 @@ try:
         command_data = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(command_data)
         
-        COMMANDS = getattr(command_data, 'COMMANDS', [])
-        COMMAND_CATEGORIES = getattr(command_data, 'COMMAND_CATEGORIES', [])
+        # commands辞書を読み込んで、リスト形式に変換
+        commands_dict = getattr(command_data, 'commands', None) or getattr(command_data, 'COMMANDS', [])
         
-        if not COMMAND_CATEGORIES and COMMANDS:
-            COMMAND_CATEGORIES = list(set([cmd.get('category', 'その他') for cmd in COMMANDS]))
-            COMMAND_CATEGORIES.sort()
+        if isinstance(commands_dict, dict):
+            # 辞書形式を内部用のリスト形式に変換
+            COMMANDS = []
+            for cmd_key, cmd_data in commands_dict.items():
+                command_entry = {
+                    'key': cmd_key,
+                    'name': cmd_data.get('name', cmd_key),
+                    'desc': cmd_data.get('desc', ''),
+                    'keywords': cmd_data.get('aliases', []),
+                    'template': cmd_data.get('template', {}),
+                    'note': cmd_data.get('note', ''),
+                    'category': cmd_data.get('category', 'その他')
+                }
+                COMMANDS.append(command_entry)
+        elif isinstance(commands_dict, list):
+            COMMANDS = commands_dict
+        
+        # template_requires_item関数も読み込む
+        template_requires_item = getattr(command_data, 'template_requires_item', None)
+        
+        COMMAND_CATEGORIES = list(set([cmd.get('category', 'その他') for cmd in COMMANDS]))
+        COMMAND_CATEGORIES.sort()
         
         load_status['commands'] = True
+        load_status['commands_count'] = len(COMMANDS)
     else:
         load_status['commands_error'] = f"ファイルが見つかりません: {command_data_path}"
         
@@ -205,25 +231,42 @@ def search_commands(query, edition):
     query_lower = query.lower()
     
     for cmd in COMMANDS:
-        # キーワードマッチング
-        if any(keyword.lower() in query_lower for keyword in cmd.get('keywords', [])):
+        # キーワードマッチング（aliases/keywordsの両方に対応）
+        keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
+        if any(keyword.lower() in query_lower for keyword in keywords):
             cmd_copy = cmd.copy()
             
-            # アイテムIDの置換が必要な場合
-            if '{item_id}' in cmd_copy.get('cmd_template', ''):
-                if ITEMS:
-                    # デフォルトアイテムを設定（最初のアイテム）
-                    default_item = list(ITEMS.values())[0]
-                    cmd_copy['cmd'] = cmd_copy['cmd_template'].replace(
-                        '{item_id}', 
-                        default_item['id'][edition]
-                    )
-                    cmd_copy['item_name'] = default_item['name']
-                    cmd_copy['desc'] = cmd_copy.get('desc', '').replace('{item}', default_item['name'])
-                else:
-                    cmd_copy['cmd'] = cmd_copy['cmd_template']
+            # テンプレートの取得
+            template = cmd_copy.get('template', {})
+            
+            # エディション別のテンプレートを取得
+            if isinstance(template, dict):
+                cmd_template = template.get(edition, '')
+                # リスト形式の場合は最初の要素を使用
+                if isinstance(cmd_template, list):
+                    cmd_template = cmd_template[0] if cmd_template else ''
             else:
-                cmd_copy['cmd'] = cmd_copy.get('cmd_template', '')
+                cmd_template = template
+            
+            # アイテムIDの置換が必要な場合
+            if '{item_id}' in str(cmd_template):
+                if ITEMS:
+                    # デフォルトアイテムを設定
+                    default_item = list(ITEMS.values())[0]
+                    default_item_id = default_item.get('id', {}).get(edition, default_item.get('name', ''))
+                    cmd_copy['cmd'] = cmd_template.replace('{item_id}', default_item_id)
+                    cmd_copy['item_name'] = default_item.get('name', '')
+                    # 説明文のアイテム名も置換
+                    desc = cmd_copy.get('desc', '')
+                    if '{item}' in desc:
+                        cmd_copy['desc'] = desc.replace('{item}', default_item.get('name', ''))
+                else:
+                    cmd_copy['cmd'] = cmd_template
+            else:
+                cmd_copy['cmd'] = cmd_template
+            
+            # cmd_templateを保持（後でアイテム変更に使用）
+            cmd_copy['cmd_template'] = cmd_template
             
             results.append(cmd_copy)
     
@@ -246,12 +289,20 @@ def search_items(query, category=None):
     
     filtered = ITEMS
     
-    # キーワード検索
+    # キーワード検索（名前とaliasesの両方を検索）
     if query:
-        filtered = {
-            k: v for k, v in filtered.items() 
-            if query.lower() in v.get('name', '').lower()
-        }
+        query_lower = query.lower()
+        filtered = {}
+        for k, v in ITEMS.items():
+            # 名前での検索
+            if query_lower in v.get('name', '').lower():
+                filtered[k] = v
+                continue
+            # aliasesでの検索
+            aliases = v.get('aliases', [])
+            if any(query_lower in alias.lower() for alias in aliases):
+                filtered[k] = v
+                continue
     
     # カテゴリフィルター
     if category and category != "全て":
@@ -381,7 +432,8 @@ elif menu == "🛠 コマンド生成":
             st.success(f"✅ {len(candidates)}件のコマンドが見つかりました")
             
             for i, cmd in enumerate(candidates):
-                with st.expander(f"📋 {cmd.get('desc', 'コマンド')}", expanded=(i==0)):
+                cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
+                with st.expander(f"📋 {cmd_name}: {cmd.get('desc', '')}", expanded=(i==0)):
                     st.code(cmd.get('cmd', ''), language='bash')
                     
                     # アイテム選択（必要な場合のみ）
@@ -389,23 +441,21 @@ elif menu == "🛠 コマンド生成":
                         st.markdown("**アイテムを変更:**")
                         selected_item = st.selectbox(
                             "アイテム選択",
-                            options=[item['name'] for item in ITEMS.values()],
+                            options=[item.get('name', k) for k, item in ITEMS.items()],
                             key=f"item_select_{i}",
                             label_visibility="collapsed"
                         )
                         
                         # アイテム変更時にコマンドを更新
-                        for item in ITEMS.values():
-                            if item['name'] == selected_item:
-                                updated_cmd = cmd['cmd_template'].replace(
-                                    '{item_id}', 
-                                    item['id'][st.session_state.edition]
-                                )
+                        for item_key, item in ITEMS.items():
+                            if item.get('name', item_key) == selected_item:
+                                item_id = item.get('id', {}).get(st.session_state.edition, selected_item)
+                                updated_cmd = cmd['cmd_template'].replace('{item_id}', item_id)
                                 st.code(updated_cmd, language='bash')
                                 break
                     
                     st.markdown(f"**解説:** {cmd.get('desc', '')}")
-                    if 'note' in cmd:
+                    if 'note' in cmd and cmd['note']:
                         st.markdown(f"**補足:** {cmd['note']}")
                     if 'category' in cmd:
                         st.markdown(f"**カテゴリ:** {cmd['category']}")
@@ -415,10 +465,13 @@ elif menu == "🛠 コマンド生成":
             # 利用可能なキーワードを表示
             all_keywords = set()
             for cmd in COMMANDS:
-                all_keywords.update(cmd.get('keywords', []))
-            sample_keywords = list(all_keywords)[:10]
-            for keyword in sample_keywords:
-                st.markdown(f"- {keyword}")
+                keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
+                all_keywords.update(keywords)
+            sample_keywords = list(all_keywords)[:15]
+            cols = st.columns(3)
+            for idx, keyword in enumerate(sample_keywords):
+                with cols[idx % 3]:
+                    st.markdown(f"- {keyword}")
 
 # ========== アイテム図鑑 ==========
 elif menu == "📘 アイテム図鑑":
@@ -433,7 +486,11 @@ elif menu == "📘 アイテム図鑑":
     # カテゴリフィルターと検索
     col1, col2 = st.columns([2, 1])
     with col1:
-        search_query = st.text_input("🔍 アイテムを検索", placeholder="例: ダイヤ、鉄")
+        search_query = st.text_input(
+            "🔍 アイテムを検索", 
+            placeholder="例: 木、オーク、板材",
+            help="アイテム名やエイリアス（別名）で検索できます"
+        )
     with col2:
         selected_category = st.selectbox(
             "カテゴリ",
@@ -449,19 +506,62 @@ elif menu == "📘 アイテム図鑑":
         
         for item_key, item in filtered_items.items():
             category = item.get('category', 'その他')
-            with st.expander(f"📦 {item.get('name', item_key)} [{category}]", expanded=False):
+            item_name = item.get('name', item_key)
+            item_desc = item.get('desc', '')
+            
+            # エイリアス（別名）の取得
+            aliases = item.get('aliases', [])
+            alias_display = f"別名: {', '.join(aliases[:5])}" if aliases else ""
+            if len(aliases) > 5:
+                alias_display += f"...他{len(aliases)-5}個"
+            
+            with st.expander(f"📦 {item_name} [{category}]", expanded=False):
+                if item_desc:
+                    st.markdown(f"**説明:** {item_desc}")
+                
                 col1, col2 = st.columns(2)
+                
+                # IDの取得
+                item_id_data = item.get('id', {})
+                
                 with col1:
                     st.markdown(f"**統合版ID:**")
-                    st.code(item['id'].get('統合版', 'N/A'))
+                    if isinstance(item_id_data, dict):
+                        bedrock_id = item_id_data.get('統合版', item_key)
+                    else:
+                        bedrock_id = item_id_data
+                    st.code(bedrock_id)
+                    
                 with col2:
                     st.markdown(f"**Java版ID:**")
-                    st.code(item['id'].get('Java版', 'N/A'))
+                    if isinstance(item_id_data, dict):
+                        java_id = item_id_data.get('Java版', f'minecraft:{item_key}')
+                    else:
+                        java_id = item_id_data
+                    st.code(java_id)
+                
+                # スタックサイズ
+                stack_size = item.get('stack_size', 64)
+                st.markdown(f"**スタックサイズ:** {stack_size}")
+                
+                # エイリアス表示
+                if aliases:
+                    with st.expander("🏷️ 検索用エイリアス", expanded=False):
+                        st.markdown(", ".join(aliases))
                 
                 # giveコマンドのサンプル
                 st.markdown("**取得コマンド:**")
-                give_cmd = f"/give @s {item['id'].get(st.session_state.edition, '')} 1"
-                st.code(give_cmd, language='bash')
+                current_id = bedrock_id if st.session_state.edition == '統合版' else java_id
+                
+                col_cmd1, col_cmd2 = st.columns(2)
+                with col_cmd1:
+                    st.markdown("*1個:*")
+                    give_cmd_1 = f"/give @s {current_id} 1"
+                    st.code(give_cmd_1, language='bash')
+                with col_cmd2:
+                    st.markdown(f"*{stack_size}個:*")
+                    give_cmd_stack = f"/give @s {current_id} {stack_size}"
+                    st.code(give_cmd_stack, language='bash')
     else:
         st.warning("該当するアイテムが見つかりませんでした")
 
@@ -493,13 +593,29 @@ elif menu == "🧾 コマンド図鑑":
     
     for i, cmd in enumerate(filtered_commands):
         category_tag = cmd.get('category', 'その他')
-        with st.expander(f"📌 [{category_tag}] {cmd.get('desc', 'コマンド')}", expanded=False):
-            st.code(cmd.get('cmd_template', ''), language='bash')
+        cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
+        
+        # テンプレートの取得
+        template = cmd.get('template', {})
+        if isinstance(template, dict):
+            cmd_template = template.get(st.session_state.edition, '')
+            if isinstance(cmd_template, list):
+                cmd_template = cmd_template[0] if cmd_template else ''
+        else:
+            cmd_template = template
+        
+        with st.expander(f"📌 [{category_tag}] {cmd_name}", expanded=False):
+            st.code(cmd_template, language='bash')
             st.markdown(f"**解説:** {cmd.get('desc', '')}")
-            if 'note' in cmd:
+            if 'note' in cmd and cmd['note']:
                 st.markdown(f"**補足:** {cmd['note']}")
-            if 'keywords' in cmd:
-                st.markdown(f"**検索キーワード:** {', '.join(cmd['keywords'])}")
+            
+            # キーワード表示
+            keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
+            if keywords:
+                st.markdown(f"**検索キーワード:** {', '.join(keywords[:10])}")
+                if len(keywords) > 10:
+                    st.markdown(f"*...他{len(keywords)-10}個*")
 
 # ========== 設定画面 ==========
 elif menu == "⚙️ 設定":
