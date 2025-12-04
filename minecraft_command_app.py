@@ -7,7 +7,7 @@ import json
 
 # Gemini APIの設定
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
 # 正規化プロンプト
 NORMALIZATION_PROMPT = """あなたはMinecraftのコマンド生成システムの自然言語正規化エンジンです。
@@ -142,23 +142,45 @@ async def normalize_with_gemini(user_input):
                 }]
             }],
             "generationConfig": {
-                "temperature": 0.3,
-                "maxOutputTokens": 200,
+                "temperature": 0.1,
+                "maxOutputTokens": 500,
+                "topP": 0.8,
+                "topK": 40
             }
         }
         
         url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
         
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data) as response:
+            async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
                 if response.status == 200:
                     result = await response.json()
-                    normalized_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                    return normalized_text
-                else:
+                    
+                    # レスポンスのデバッグ情報
+                    st.write("**API Response (Debug):**", result)
+                    
+                    # テキスト抽出
+                    candidates = result.get("candidates", [])
+                    if candidates and len(candidates) > 0:
+                        content = candidates[0].get("content", {})
+                        parts = content.get("parts", [])
+                        if parts and len(parts) > 0:
+                            normalized_text = parts[0].get("text", "").strip()
+                            return normalized_text
+                    
                     return None
+                else:
+                    error_text = await response.text()
+                    st.error(f"API Error {response.status}: {error_text}")
+                    return None
+                    
+    except aiohttp.ClientError as e:
+        st.error(f"接続エラー: {e}")
+        return None
     except Exception as e:
         st.error(f"Gemini API エラー: {e}")
+        import traceback
+        st.code(traceback.format_exc())
         return None
 
 # 現在のディレクトリとファイル一覧を確認
@@ -646,6 +668,13 @@ elif menu == "🛠 コマンド生成":
         if use_ai:
             with st.spinner("🤖 AIが入力を理解しています..."):
                 import asyncio
+                
+                # デバッグモード
+                with st.expander("🔍 デバッグ情報", expanded=False):
+                    st.markdown("**送信するプロンプト:**")
+                    debug_prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
+                    st.code(debug_prompt[:500] + "..." if len(debug_prompt) > 500 else debug_prompt)
+                
                 normalized = asyncio.run(normalize_with_gemini(user_input))
                 
                 if normalized:
@@ -657,6 +686,7 @@ elif menu == "🛠 コマンド生成":
                     search_text = normalized
                 else:
                     st.warning("⚠️ AI正規化に失敗しました。元の入力で検索します。")
+                    st.info("💡 プロンプトを調整するか、APIキーを確認してください")
                     search_text = user_input
         else:
             search_text = user_input
