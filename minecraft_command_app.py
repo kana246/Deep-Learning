@@ -1,10 +1,165 @@
 import streamlit as st
 from pathlib import Path
 import sys
-
-# ========== 外部ファイルの読み込み ==========
 import os
 import importlib.util
+import json
+
+# Gemini APIの設定
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+
+# 正規化プロンプト
+NORMALIZATION_PROMPT = """あなたはMinecraftのコマンド生成システムの自然言語正規化エンジンです。
+ユーザーの曖昧な入力を、明確な構造化された形式に変換してください。
+
+【出力形式】
+「[対象]に[アイテム名/効果名]を[数量]個与える」または「[対象]に[効果名]の効果を付ける」
+
+【対象の種類】
+- 自分/me/@p/私/僕/俺 → 自分
+- あいつ/他の人/ほかのプレイヤー/あの人/彼/彼女/@a → 他のプレイヤー
+- みんな/全員/all/@a → 全プレイヤー
+- 最も近い人/@r → 最も近いプレイヤー
+- 特定のプレイヤー名(例: Steve, Alex) → [プレイヤー名]
+- 対象が省略されている場合 → 自分
+
+【数量の表現】
+- 大量に/たくさん/いっぱい → 64個
+- 1スタック/スタック → 64個
+- 少し/数個/ちょっと → 5個
+- 半スタック → 32個
+- 具体的な数値があればその数値
+- 省略時 → 1個(ただし松明など消耗品は10個)
+
+【Minecraft用語マッピング】
+■道具
+- 掘るやつ/採掘道具/ツルハシ/つるはし/ピッケル/pick → ピッケル
+- 斧/木切るの/伐採道具 → 斧
+- 釣り竿/魚釣りたい → 釣り竿
+- 水汲むやつ/バケツ → バケツ
+- シャベル/スコップ → シャベル
+
+■武器・防具
+- 武器/攻撃できるやつ/剣的なの/けん → 剣
+- 遠距離武器/弓矢/bow → 弓
+- 防具一式/armor/鎧全部 → ヘルメット、チェストプレート、レギンス、ブーツ
+- 頭装備/兜/ヘルメット的なやつ → ヘルメット
+
+■ブロック・素材
+- 木材/wood/木のブロック → 木材
+- 石ころ/cobblestone/丸石 → 丸石
+- 光るやつ/明かり/たいまつ/松明/たいまち → 松明
+- 土/dirt/土ブロック → 土
+- ガラス/透明なブロック → ガラス
+
+■食料
+- 食べ物/food/腹減った → パン
+- 肉/ステーキ/beef → ステーキ
+- パン/bread → パン
+- 果物/リンゴ/apple → リンゴ
+
+■特殊アイテム
+- 爆弾/爆発するやつ → TNT
+- ワープ/瞬間移動アイテム → エンダーパール
+- 寝るやつ/respawn地点 → ベッド
+- 時計/時間見るやつ/clock → 時計
+- 地図/マッピング/map → 地図
+
+■エフェクト（移動・身体能力）
+- 足速くして/走りたい/speed/俊敏 → 俊敏
+- 高く飛びたい/ジャンプ力up/jump boost → 跳躍
+- 遅くして/のろま/slowness → 鈍化
+- 泳ぎ速く/水中移動 → 水中移動
+
+■エフェクト（戦闘関連）
+- 強くなりたい/攻撃力up/strength/筋力 → 力
+- 硬くなりたい/防御/resistance/耐性 → 耐性
+- 再生/回復/regeneration/体力戻して → 再生
+- 透明になりたい/invisible/見えなく → 透明化
+- 光りたい/暗視/night vision/夜見える → 暗視
+
+■エフェクト（その他）
+- 水中呼吸/溺れない/water breathing → 水中呼吸
+- 落下ダメージなし/軽やか → 低速落下
+- 火耐性/fire resistance/燃えない/耐火 → 火炎耐性
+- 毒/poison → 毒
+- 弱体化/weakness/弱く → 弱体化
+
+■素材の種類
+- 木/wooden/wood → 木
+- 石/stone → 石
+- 鉄/iron/アイアン → 鉄
+- 金/golden/gold/ゴールド → 金
+- ダイヤ/ダイア/diamond/dia → ダイヤモンド
+- ネザライト/netherite → ネザライト
+
+【変換ルール】
+1. 対象を特定し、必ず出力に含める
+2. 「〜に」「〜へ」で対象を判別
+3. 「やる」「あげる」「渡す」「くれ」「ください」→「与える」
+4. 「〜したい」「〜になりたい」→「〜の効果を付ける」(対象は自分)
+5. 数量を明示的に出力
+6. 素材+アイテムの組み合わせは「[素材]の[アイテム]」
+7. 防具一式は4つのパーツに展開(それぞれに対象と数量を付ける)
+8. 複数要求は「、」で区切る
+9. 対象が明示されていない場合は「自分」とする
+
+【注意事項】
+- 必ず「[対象]に」を含める
+- 数量は必ず明示(「〜個」の形式)
+- 対象が複数の場合も「、」で区切って個別に出力
+- プレイヤー名が指定されている場合はそのまま使用
+- 「自分」「他のプレイヤー」「全プレイヤー」「最も近いプレイヤー」のいずれかに統一
+- 正規化された出力のみを返し、説明文は不要
+
+【入力】
+{user_input}
+
+【正規化された出力】"""
+
+# ========== Gemini API呼び出し関数 ==========
+async def normalize_with_gemini(user_input):
+    """
+    Gemini APIを使ってユーザー入力を正規化
+    """
+    if not GEMINI_API_KEY:
+        return None
+    
+    import aiohttp
+    
+    try:
+        prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
+        
+        headers = {
+            "Content-Type": "application/json",
+        }
+        
+        data = {
+            "contents": [{
+                "parts": [{
+                    "text": prompt
+                }]
+            }],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 200,
+            }
+        }
+        
+        url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=data) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    normalized_text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                    return normalized_text
+                else:
+                    return None
+    except Exception as e:
+        st.error(f"Gemini API エラー: {e}")
+        return None
 
 # 現在のディレクトリとファイル一覧を確認
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
@@ -211,6 +366,10 @@ if 'selected_command' not in st.session_state:
     st.session_state.selected_command = None
 if 'user_input' not in st.session_state:
     st.session_state.user_input = ''
+if 'use_ai_normalization' not in st.session_state:
+    st.session_state.use_ai_normalization = True
+if 'normalized_text' not in st.session_state:
+    st.session_state.normalized_text = ''
 
 # ========== コマンド検索関数 ==========
 def search_commands(query, edition):
@@ -448,16 +607,62 @@ elif menu == "🛠 コマンド生成":
         st.error("❌ コマンドデータが読み込まれていません")
         st.stop()
     
-    st.markdown("### やりたいことを入力してください")
-    user_input = st.text_input(
-        "日本語で入力（例: ダイヤモンドを与える、テレポート、天気を晴れに）",
+    # AI正規化の設定
+    col_ai1, col_ai2 = st.columns([3, 1])
+    with col_ai1:
+        st.markdown("### やりたいことを自然な日本語で入力してください")
+    with col_ai2:
+        use_ai = st.toggle(
+            "🤖 AI正規化",
+            value=st.session_state.use_ai_normalization,
+            help="Gemini APIで自然言語を理解します",
+            key="ai_toggle"
+        )
+        st.session_state.use_ai_normalization = use_ai
+    
+    # API キーの確認
+    if use_ai and not GEMINI_API_KEY:
+        st.warning("⚠️ Gemini APIキーが設定されていません。Streamlit Secretsに`GEMINI_API_KEY`を追加してください。")
+        st.info("AI正規化なしで動作します。")
+        use_ai = False
+    
+    user_input = st.text_area(
+        "入力例",
         value=st.session_state.user_input,
+        placeholder="例:\n- パンが欲しい\n- 足を速くしたい\n- ダイヤのツルハシちょうだい\n- みんなに松明を大量に配る",
+        height=100,
         key="command_input"
     )
     
-    if user_input:
+    # 処理ボタン
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        generate_btn = st.button("🚀 コマンド生成", type="primary", use_container_width=True)
+    
+    if generate_btn and user_input:
         st.session_state.user_input = user_input
-        candidates = search_commands(user_input, st.session_state.edition)
+        
+        # AI正規化を使用する場合
+        if use_ai:
+            with st.spinner("🤖 AIが入力を理解しています..."):
+                import asyncio
+                normalized = asyncio.run(normalize_with_gemini(user_input))
+                
+                if normalized:
+                    st.session_state.normalized_text = normalized
+                    st.success("✅ AI正規化完了")
+                    st.info(f"**理解した内容:** {normalized}")
+                    
+                    # 正規化されたテキストでコマンド検索
+                    search_text = normalized
+                else:
+                    st.warning("⚠️ AI正規化に失敗しました。元の入力で検索します。")
+                    search_text = user_input
+        else:
+            search_text = user_input
+        
+        # コマンド検索
+        candidates = search_commands(search_text, st.session_state.edition)
         
         if candidates:
             st.success(f"✅ {len(candidates)}件のコマンドが見つかりました")
@@ -688,6 +893,25 @@ elif menu == "⚙️ 設定":
     st.session_state.edition = edition
     
     st.success(f"✅ 現在のバージョン: **{st.session_state.edition}**")
+    
+    st.markdown("---")
+    st.markdown("### 🤖 AI機能設定")
+    
+    st.markdown("**Gemini API キー**")
+    if GEMINI_API_KEY:
+        st.success("✅ APIキーが設定されています")
+    else:
+        st.warning("⚠️ APIキーが未設定です")
+        st.info("Streamlit Cloudの場合: Settings → Secrets に `GEMINI_API_KEY = 'your-api-key'` を追加")
+        st.info("ローカルの場合: 環境変数 `GEMINI_API_KEY` を設定")
+    
+    with st.expander("📖 Gemini APIキーの取得方法"):
+        st.markdown("""
+        1. [Google AI Studio](https://makersuite.google.com/app/apikey) にアクセス
+        2. 「Get API Key」をクリック
+        3. APIキーをコピー
+        4. Streamlit Secretsまたは環境変数に設定
+        """)
     
     st.markdown("---")
     st.markdown("### 📊 データファイル情報")
