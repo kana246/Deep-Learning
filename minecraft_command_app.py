@@ -17,7 +17,7 @@ GEMINI_ENDPOINTS = [
 ]
 GEMINI_API_URL = GEMINI_ENDPOINTS[0]  # デフォルト
 
-# 正規化プロンプト
+# 正規化プロンプト（ハイブリッド版用）
 NORMALIZATION_PROMPT = """あなたはMinecraftのコマンド生成システムの自然言語正規化エンジンです。
 ユーザーの曖昧な入力を、明確な構造化された形式に変換してください。
 
@@ -40,13 +40,13 @@ NORMALIZATION_PROMPT = """あなたはMinecraftのコマンド生成システム
 - 具体的な数値があればその数値
 - 省略時 → 1個(ただし松明など消耗品は10個)
 
-【Minecraft用語マッピング例】
+【Minecraft用語マッピング】
 ■道具
-- 掘るやつ/採掘道具/ツルハシ/つるはし/ピッケル/pick → ツルハシ
+- 掘るやつ/採掘道具/ツルハシ/つるはし/ピッケル/pick → ピッケル
 - 斧/木切るの/伐採道具 → 斧
 - 釣り竿/魚釣りたい → 釣り竿
 - 水汲むやつ/バケツ → バケツ
-- シャベル/スコップ/地面を掘るやつ → シャベル
+- シャベル/スコップ → シャベル
 
 ■武器・防具
 - 武器/攻撃できるやつ/剣的なの/けん → 剣
@@ -126,6 +126,86 @@ NORMALIZATION_PROMPT = """あなたはMinecraftのコマンド生成システム
 
 【正規化された出力】"""
 
+# AI直接生成プロンプト（AI単体版用）
+DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです。ユーザーの自然言語入力から、直接Minecraftコマンドを生成してください。
+
+【重要ルール】
+- コマンドのみを出力（説明文や前置きは不要）
+- 複数コマンドの場合は改行で区切る
+- 統合版（Bedrock Edition）のコマンド形式を使用
+
+【対象セレクター】
+- @s または @p : 自分/コマンド実行者
+- @a : 全プレイヤー
+- @r : ランダムなプレイヤー
+- [プレイヤー名] : 特定のプレイヤー
+
+【主要コマンド形式】
+■アイテム付与
+/give [対象] [アイテムID] [数量]
+例: /give @s diamond 1
+例: /give @s iron_pickaxe 1
+
+■エフェクト付与
+/effect [対象] [効果ID] [秒数] [レベル]
+例: /effect @s speed 60 2
+例: /effect @a regeneration 30 1
+
+■テレポート
+/tp [対象] [x] [y] [z]
+/tp [対象] ~ ~10 ~
+
+■ゲームモード変更
+/gamemode creative
+/gamemode survival
+
+■天気変更
+/weather clear
+/weather rain
+/weather thunder
+
+■時間変更
+/time set day
+/time set night
+
+【アイテムID例】
+- ダイヤモンド: diamond
+- パン: bread
+- ステーキ: cooked_beef
+- 鉄のツルハシ: iron_pickaxe
+- ダイヤの剣: diamond_sword
+- オークの原木: oak_log
+- 松明: torch
+- TNT: tnt
+- エンダーパール: ender_pearl
+
+【エフェクトID例】
+- 俊敏/速度上昇: speed
+- 跳躍力上昇: jump_boost
+- 力/攻撃力上昇: strength
+- 再生: regeneration
+- 耐性: resistance
+- 透明化: invisibility
+- 暗視: night_vision
+- 水中呼吸: water_breathing
+- 火炎耐性: fire_resistance
+
+【数量の解釈】
+- 大量に/たくさん/いっぱい/スタック → 64
+- 少し/数個/ちょっと → 5
+- 半スタック → 32
+- 明示的な数値があればその数値
+- 省略時 → 1
+
+【エディション】
+現在のエディション: {edition}
+※統合版の場合は統合版のコマンド形式を、Java版の場合はJava版の形式を使用
+
+【入力】
+{user_input}
+
+【生成されたコマンド】"""
+
 # ========== 利用可能なモデルをチェック ==========
 async def check_available_models():
     """
@@ -156,7 +236,66 @@ async def check_available_models():
         st.error(f"モデルチェックエラー: {e}")
         return []
 
-# ========== Gemini API呼び出し関数 ==========
+# ========== AI直接生成関数 ==========
+async def generate_command_directly(user_input, edition):
+    """
+    AI単体でコマンドを直接生成
+    """
+    if not GEMINI_API_KEY:
+        return None
+    
+    import aiohttp
+    
+    error_messages = []
+    
+    # 複数のエンドポイントを試す
+    for endpoint in GEMINI_ENDPOINTS:
+        try:
+            prompt = DIRECT_GENERATION_PROMPT.replace("{user_input}", user_input).replace("{edition}", edition)
+            
+            headers = {
+                "Content-Type": "application/json",
+            }
+            
+            data = {
+                "contents": [{
+                    "parts": [{
+                        "text": prompt
+                    }]
+                }],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 500,
+                }
+            }
+            
+            url = f"{endpoint}?key={GEMINI_API_KEY}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    
+                    if response.status == 200:
+                        result = await response.json()
+                        
+                        # テキスト抽出
+                        candidates = result.get("candidates", [])
+                        if candidates and len(candidates) > 0:
+                            content = candidates[0].get("content", {})
+                            parts = content.get("parts", [])
+                            if parts and len(parts) > 0:
+                                generated_commands = parts[0].get("text", "").strip()
+                                return generated_commands
+                        
+                        return None
+                    else:
+                        continue
+                        
+        except Exception as e:
+            continue
+    
+    return None
+
+# ========== Gemini API呼び出し関数（正規化用） ==========
 async def normalize_with_gemini(user_input):
     """
     Gemini APIを使ってユーザー入力を正規化
@@ -469,6 +608,8 @@ if 'use_ai_normalization' not in st.session_state:
     st.session_state.use_ai_normalization = True
 if 'normalized_text' not in st.session_state:
     st.session_state.normalized_text = ''
+if 'generation_mode' not in st.session_state:
+    st.session_state.generation_mode = 'hybrid'  # 'hybrid' or 'ai_only'
 
 # ========== コマンド検索関数 ==========
 def search_commands(query, edition):
@@ -706,24 +847,64 @@ elif menu == "🛠 コマンド生成":
         st.error("❌ コマンドデータが読み込まれていません")
         st.stop()
     
-    # AI正規化の設定
-    col_ai1, col_ai2 = st.columns([3, 1])
-    with col_ai1:
-        st.markdown("### やりたいことを自然な日本語で入力してください")
-    with col_ai2:
-        use_ai = st.toggle(
-            "🤖 AI正規化",
-            value=st.session_state.use_ai_normalization,
-            help="Gemini APIで自然言語を理解します",
-            key="ai_toggle"
-        )
-        st.session_state.use_ai_normalization = use_ai
+    # 生成モード選択
+    st.markdown("### 生成モード選択")
+    col_mode1, col_mode2 = st.columns(2)
     
-    # API キーの確認
-    if use_ai and not GEMINI_API_KEY:
-        st.warning("⚠️ Gemini APIキーが設定されていません。Streamlit Secretsに`GEMINI_API_KEY`を追加してください。")
-        st.info("AI正規化なしで動作します。")
-        use_ai = False
+    with col_mode1:
+        mode_hybrid = st.button(
+            "🔄 ハイブリッド版（推奨）",
+            type="primary" if st.session_state.generation_mode == 'hybrid' else "secondary",
+            use_container_width=True,
+            help="AI正規化 → ルールベース生成"
+        )
+        if mode_hybrid:
+            st.session_state.generation_mode = 'hybrid'
+    
+    with col_mode2:
+        mode_ai = st.button(
+            "🤖 AI単体版",
+            type="primary" if st.session_state.generation_mode == 'ai_only' else "secondary",
+            use_container_width=True,
+            help="AIが直接コマンドを生成"
+        )
+        if mode_ai:
+            st.session_state.generation_mode = 'ai_only'
+    
+    # 現在のモード表示
+    if st.session_state.generation_mode == 'hybrid':
+        st.info("📊 **ハイブリッド版**: AI正規化 → ルールベース生成（精度重視）")
+    else:
+        st.info("🚀 **AI単体版**: AIが直接コマンドを生成（柔軟性重視）")
+    
+    st.markdown("---")
+    
+    # AI設定（ハイブリッドモードのみ）
+    if st.session_state.generation_mode == 'hybrid':
+        col_ai1, col_ai2 = st.columns([3, 1])
+        with col_ai1:
+            st.markdown("### やりたいことを自然な日本語で入力してください")
+        with col_ai2:
+            use_ai = st.toggle(
+                "🤖 AI正規化",
+                value=st.session_state.use_ai_normalization,
+                help="Gemini APIで自然言語を理解します",
+                key="ai_toggle"
+            )
+            st.session_state.use_ai_normalization = use_ai
+        
+        # API キーの確認
+        if use_ai and not GEMINI_API_KEY:
+            st.warning("⚠️ Gemini APIキーが設定されていません。Streamlit Secretsに`GEMINI_API_KEY`を追加してください。")
+            st.info("AI正規化なしで動作します。")
+            use_ai = False
+    else:
+        st.markdown("### やりたいことを自然な日本語で入力してください")
+        use_ai = True  # AI単体版では常にAI使用
+        
+        if not GEMINI_API_KEY:
+            st.error("❌ Gemini APIキーが設定されていません。AI単体版を使用するには設定が必要です。")
+            st.stop()
     
     user_input = st.text_area(
         "入力例",
@@ -741,106 +922,132 @@ elif menu == "🛠 コマンド生成":
     if generate_btn and user_input:
         st.session_state.user_input = user_input
         
-        # AI正規化を使用する場合
-        if use_ai:
-            with st.spinner("🤖 AIが入力を理解しています..."):
+        # ========== AI単体版 ==========
+        if st.session_state.generation_mode == 'ai_only':
+            with st.spinner("🤖 AIがコマンドを生成しています..."):
                 import asyncio
+                generated_commands = asyncio.run(generate_command_directly(user_input, st.session_state.edition))
                 
-                # デバッグモード
-                with st.expander("🔍 デバッグ情報", expanded=False):
-                    st.markdown("**送信するプロンプト:**")
-                    debug_prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
-                    st.code(debug_prompt[:500] + "..." if len(debug_prompt) > 500 else debug_prompt)
-                
-                normalized = asyncio.run(normalize_with_gemini(user_input))
-                
-                if normalized:
-                    st.session_state.normalized_text = normalized
-                    st.success("✅ AI正規化完了")
-                    st.info(f"**理解した内容:** {normalized}")
+                if generated_commands:
+                    st.success("✅ AI単体版でコマンド生成完了")
                     
-                    # 正規化されたテキストでコマンド検索
-                    search_text = normalized
+                    # 生成されたコマンドを表示
+                    commands_list = [cmd.strip() for cmd in generated_commands.split('\n') if cmd.strip()]
+                    
+                    for i, cmd in enumerate(commands_list):
+                        with st.expander(f"📋 生成されたコマンド {i+1}", expanded=True):
+                            st.code(cmd, language='bash')
+                            
+                            st.markdown("---")
+                            st.markdown("**💡 AI単体版の特徴:**")
+                            st.markdown("- 柔軟な解釈が可能")
+                            st.markdown("- 複雑な要求に対応")
+                            st.markdown("- アイテムIDの変換も自動")
                 else:
-                    st.warning("⚠️ AI正規化に失敗しました。元の入力で検索します。")
-                    st.info("💡 プロンプトを調整するか、APIキーを確認してください")
-                    search_text = user_input
+                    st.error("❌ コマンド生成に失敗しました")
+        
+        # ========== ハイブリッド版 ==========
         else:
-            search_text = user_input
-        
-        # コマンド検索
-        candidates = search_commands(search_text, st.session_state.edition)
-        
-        if candidates:
-            st.success(f"✅ {len(candidates)}件のコマンドが見つかりました")
+            # AI正規化を使用する場合
+            if use_ai:
+                with st.spinner("🤖 AIが入力を理解しています..."):
+                    import asyncio
+                    
+                    # デバッグモード
+                    with st.expander("🔍 デバッグ情報", expanded=False):
+                        st.markdown("**送信するプロンプト:**")
+                        debug_prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
+                        st.code(debug_prompt[:500] + "..." if len(debug_prompt) > 500 else debug_prompt)
+                    
+                    normalized = asyncio.run(normalize_with_gemini(user_input))
+                    
+                    if normalized:
+                        st.session_state.normalized_text = normalized
+                        st.success("✅ AI正規化完了")
+                        st.info(f"**理解した内容:** {normalized}")
+                        
+                        # 正規化されたテキストでコマンド検索
+                        search_text = normalized
+                    else:
+                        st.warning("⚠️ AI正規化に失敗しました。元の入力で検索します。")
+                        st.info("💡 プロンプトを調整するか、APIキーを確認してください")
+                        search_text = user_input
+            else:
+                search_text = user_input
             
-            for i, cmd in enumerate(candidates):
-                cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
-                item_name = cmd.get('item_name', '')
+            # コマンド検索
+            candidates = search_commands(search_text, st.session_state.edition)
+            
+            if candidates:
+                st.success(f"✅ {len(candidates)}件のコマンドが見つかりました（ハイブリッド版）")
                 
-                # タイトル表示
-                if item_name:
-                    expander_title = f"📋 {cmd_name}: {item_name}を与える"
-                else:
-                    expander_title = f"📋 {cmd_name}: {cmd.get('desc', '')}"
-                
-                with st.expander(expander_title, expanded=(i==0)):
-                    st.code(cmd.get('cmd', ''), language='bash')
+                for i, cmd in enumerate(candidates):
+                    cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
+                    item_name = cmd.get('item_name', '')
                     
-                    # アイテム選択（必要な場合のみ）
-                    if '{item_id}' in cmd.get('cmd_template', '') and ITEMS:
+                    # タイトル表示
+                    if item_name:
+                        expander_title = f"📋 {cmd_name}: {item_name}を与える"
+                    else:
+                        expander_title = f"📋 {cmd_name}: {cmd.get('desc', '')}"
+                    
+                    with st.expander(expander_title, expanded=(i==0)):
+                        st.code(cmd.get('cmd', ''), language='bash')
+                        
+                        # アイテム選択（必要な場合のみ）
+                        if '{item_id}' in cmd.get('cmd_template', '') and ITEMS:
+                            st.markdown("---")
+                            st.markdown("**🔄 アイテムを変更:**")
+                            
+                            # 現在選択されているアイテムをデフォルトに
+                            current_item_key = cmd.get('matched_item_key', list(ITEMS.keys())[0])
+                            item_names = [item.get('name', k) for k, item in ITEMS.items()]
+                            current_item_name = ITEMS.get(current_item_key, {}).get('name', item_names[0])
+                            
+                            try:
+                                default_index = item_names.index(current_item_name)
+                            except ValueError:
+                                default_index = 0
+                            
+                            selected_item = st.selectbox(
+                                "アイテム選択",
+                                options=item_names,
+                                index=default_index,
+                                key=f"item_select_{i}",
+                                label_visibility="collapsed"
+                            )
+                            
+                            # アイテム変更時にコマンドを更新
+                            for item_key, item in ITEMS.items():
+                                if item.get('name', item_key) == selected_item:
+                                    item_id_data = item.get('id', {})
+                                    if isinstance(item_id_data, dict):
+                                        item_id = item_id_data.get(st.session_state.edition, item_key)
+                                    else:
+                                        item_id = item_id_data
+                                    updated_cmd = cmd['cmd_template'].replace('{item_id}', item_id)
+                                    st.code(updated_cmd, language='bash')
+                                    break
+                        
                         st.markdown("---")
-                        st.markdown("**🔄 アイテムを変更:**")
-                        
-                        # 現在選択されているアイテムをデフォルトに
-                        current_item_key = cmd.get('matched_item_key', list(ITEMS.keys())[0])
-                        item_names = [item.get('name', k) for k, item in ITEMS.items()]
-                        current_item_name = ITEMS.get(current_item_key, {}).get('name', item_names[0])
-                        
-                        try:
-                            default_index = item_names.index(current_item_name)
-                        except ValueError:
-                            default_index = 0
-                        
-                        selected_item = st.selectbox(
-                            "アイテム選択",
-                            options=item_names,
-                            index=default_index,
-                            key=f"item_select_{i}",
-                            label_visibility="collapsed"
-                        )
-                        
-                        # アイテム変更時にコマンドを更新
-                        for item_key, item in ITEMS.items():
-                            if item.get('name', item_key) == selected_item:
-                                item_id_data = item.get('id', {})
-                                if isinstance(item_id_data, dict):
-                                    item_id = item_id_data.get(st.session_state.edition, item_key)
-                                else:
-                                    item_id = item_id_data
-                                updated_cmd = cmd['cmd_template'].replace('{item_id}', item_id)
-                                st.code(updated_cmd, language='bash')
-                                break
-                    
-                    st.markdown("---")
-                    st.markdown(f"**📝 解説:** {cmd.get('desc', '')}")
-                    if 'note' in cmd and cmd['note']:
-                        st.markdown(f"**💡 補足:** {cmd['note']}")
-                    if 'category' in cmd:
-                        st.markdown(f"**🏷️ カテゴリ:** {cmd['category']}")
-        else:
-            st.warning("⚠️ 該当するコマンドが見つかりませんでした")
-            st.markdown("**ヒント:** 以下のキーワードを試してください")
-            # 利用可能なキーワードを表示
-            all_keywords = set()
-            for cmd in COMMANDS:
-                keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
-                all_keywords.update(keywords)
-            sample_keywords = list(all_keywords)[:15]
-            cols = st.columns(3)
-            for idx, keyword in enumerate(sample_keywords):
-                with cols[idx % 3]:
-                    st.markdown(f"- {keyword}")
+                        st.markdown(f"**📝 解説:** {cmd.get('desc', '')}")
+                        if 'note' in cmd and cmd['note']:
+                            st.markdown(f"**💡 補足:** {cmd['note']}")
+                        if 'category' in cmd:
+                            st.markdown(f"**🏷️ カテゴリ:** {cmd['category']}")
+            else:
+                st.warning("⚠️ 該当するコマンドが見つかりませんでした")
+                st.markdown("**ヒント:** 以下のキーワードを試してください")
+                # 利用可能なキーワードを表示
+                all_keywords = set()
+                for cmd in COMMANDS:
+                    keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
+                    all_keywords.update(keywords)
+                sample_keywords = list(all_keywords)[:15]
+                cols = st.columns(3)
+                for idx, keyword in enumerate(sample_keywords):
+                    with cols[idx % 3]:
+                        st.markdown(f"- {keyword}")
 
 # ========== アイテム図鑑 ==========
 elif menu == "📘 アイテム図鑑":
