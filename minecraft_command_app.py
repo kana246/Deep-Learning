@@ -7,8 +7,8 @@ import json
 
 # Gemini APIの設定
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
-# gemini-proを使用（安定版）
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent"
+# v1betaに戻す
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 
 # 正規化プロンプト
 NORMALIZATION_PROMPT = """あなたはMinecraftのコマンド生成システムの自然言語正規化エンジンです。
@@ -145,8 +145,6 @@ async def normalize_with_gemini(user_input):
             "generationConfig": {
                 "temperature": 0.1,
                 "maxOutputTokens": 500,
-                "topP": 0.8,
-                "topK": 40
             }
         }
         
@@ -154,11 +152,10 @@ async def normalize_with_gemini(user_input):
         
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                response_text = await response.text()
+                
                 if response.status == 200:
                     result = await response.json()
-                    
-                    # レスポンスのデバッグ情報
-                    st.write("**API Response (Debug):**", result)
                     
                     # テキスト抽出
                     candidates = result.get("candidates", [])
@@ -171,8 +168,7 @@ async def normalize_with_gemini(user_input):
                     
                     return None
                 else:
-                    error_text = await response.text()
-                    st.error(f"API Error {response.status}: {error_text}")
+                    st.error(f"API Error {response.status}: {response_text}")
                     return None
                     
     except aiohttp.ClientError as e:
