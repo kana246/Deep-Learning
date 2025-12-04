@@ -7,8 +7,13 @@ import json
 
 # Gemini APIの設定
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
-# v1betaに戻す
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+# 複数のエンドポイントを試す
+GEMINI_ENDPOINTS = [
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+]
+GEMINI_API_URL = GEMINI_ENDPOINTS[0]  # デフォルト
 
 # 正規化プロンプト
 NORMALIZATION_PROMPT = """あなたはMinecraftのコマンド生成システムの自然言語正規化エンジンです。
@@ -119,6 +124,36 @@ NORMALIZATION_PROMPT = """あなたはMinecraftのコマンド生成システム
 
 【正規化された出力】"""
 
+# ========== 利用可能なモデルをチェック ==========
+async def check_available_models():
+    """
+    利用可能なGeminiモデルを確認
+    """
+    if not GEMINI_API_KEY:
+        return []
+    
+    import aiohttp
+    
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    models = result.get("models", [])
+                    # generateContentをサポートするモデルのみ
+                    available = [
+                        m["name"] for m in models 
+                        if "generateContent" in m.get("supportedGenerationMethods", [])
+                    ]
+                    return available
+                else:
+                    return []
+    except Exception as e:
+        st.error(f"モデルチェックエラー: {e}")
+        return []
+
 # ========== Gemini API呼び出し関数 ==========
 async def normalize_with_gemini(user_input):
     """
@@ -129,56 +164,61 @@ async def normalize_with_gemini(user_input):
     
     import aiohttp
     
-    try:
-        prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
-        
-        headers = {
-            "Content-Type": "application/json",
-        }
-        
-        data = {
-            "contents": [{
-                "parts": [{
-                    "text": prompt
-                }]
-            }],
-            "generationConfig": {
-                "temperature": 0.1,
-                "maxOutputTokens": 500,
+    # 複数のエンドポイントを試す
+    for endpoint in GEMINI_ENDPOINTS:
+        try:
+            prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
+            
+            headers = {
+                "Content-Type": "application/json",
             }
-        }
-        
-        url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                response_text = await response.text()
-                
-                if response.status == 200:
-                    result = await response.json()
+            
+            data = {
+                "contents": [{
+                    "parts": [{
+                        "text": prompt
+                    }]
+                }],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 500,
+                }
+            }
+            
+            url = f"{endpoint}?key={GEMINI_API_KEY}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
                     
-                    # テキスト抽出
-                    candidates = result.get("candidates", [])
-                    if candidates and len(candidates) > 0:
-                        content = candidates[0].get("content", {})
-                        parts = content.get("parts", [])
-                        if parts and len(parts) > 0:
-                            normalized_text = parts[0].get("text", "").strip()
-                            return normalized_text
-                    
-                    return None
-                else:
-                    st.error(f"API Error {response.status}: {response_text}")
-                    return None
-                    
-    except aiohttp.ClientError as e:
-        st.error(f"接続エラー: {e}")
-        return None
-    except Exception as e:
-        st.error(f"Gemini API エラー: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return None
+                    if response.status == 200:
+                        result = await response.json()
+                        
+                        # テキスト抽出
+                        candidates = result.get("candidates", [])
+                        if candidates and len(candidates) > 0:
+                            content = candidates[0].get("content", {})
+                            parts = content.get("parts", [])
+                            if parts and len(parts) > 0:
+                                normalized_text = parts[0].get("text", "").strip()
+                                st.success(f"✅ 使用モデル: {endpoint.split('models/')[1].split(':')[0]}")
+                                return normalized_text
+                        
+                        return None
+                    elif response.status == 404:
+                        # 404の場合は次のエンドポイントを試す
+                        continue
+                    else:
+                        response_text = await response.text()
+                        st.warning(f"⚠️ エンドポイント失敗: {endpoint.split('models/')[1].split(':')[0]}")
+                        continue
+                        
+        except Exception as e:
+            # エラーの場合も次のエンドポイントを試す
+            continue
+    
+    # すべて失敗した場合
+    st.error("❌ すべてのモデルで失敗しました。APIキーを確認してください。")
+    return None
 
 # 現在のディレクトリとファイル一覧を確認
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
@@ -927,6 +967,21 @@ elif menu == "⚙️ 設定":
     st.markdown("**Gemini API キー**")
     if GEMINI_API_KEY:
         st.success("✅ APIキーが設定されています")
+        
+        # 利用可能なモデルをチェック
+        if st.button("🔍 利用可能なモデルを確認"):
+            with st.spinner("モデルをチェック中..."):
+                import asyncio
+                available_models = asyncio.run(check_available_models())
+                
+                if available_models:
+                    st.success(f"✅ {len(available_models)}個のモデルが利用可能です")
+                    with st.expander("📋 モデル一覧"):
+                        for model in available_models:
+                            st.code(model)
+                else:
+                    st.error("❌ 利用可能なモデルが見つかりませんでした")
+                    st.info("APIキーが正しいか確認してください")
     else:
         st.warning("⚠️ APIキーが未設定です")
         st.info("Streamlit Cloudの場合: Settings → Secrets に `GEMINI_API_KEY = 'your-api-key'` を追加")
@@ -934,10 +989,12 @@ elif menu == "⚙️ 設定":
     
     with st.expander("📖 Gemini APIキーの取得方法"):
         st.markdown("""
-        1. [Google AI Studio](https://makersuite.google.com/app/apikey) にアクセス
-        2. 「Get API Key」をクリック
+        1. [Google AI Studio](https://aistudio.google.com/app/apikey) にアクセス
+        2. 「Create API Key」をクリック
         3. APIキーをコピー
         4. Streamlit Secretsまたは環境変数に設定
+        
+        **注意:** APIキーは `AIzaSy...` で始まる形式です
         """)
     
     st.markdown("---")
