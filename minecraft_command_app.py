@@ -164,6 +164,8 @@ async def normalize_with_gemini(user_input):
     
     import aiohttp
     
+    error_messages = []
+    
     # 複数のエンドポイントを試す
     for endpoint in GEMINI_ENDPOINTS:
         try:
@@ -189,6 +191,7 @@ async def normalize_with_gemini(user_input):
             
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    response_text = await response.text()
                     
                     if response.status == 200:
                         result = await response.json()
@@ -204,20 +207,55 @@ async def normalize_with_gemini(user_input):
                                 return normalized_text
                         
                         return None
-                    elif response.status == 404:
-                        # 404の場合は次のエンドポイントを試す
-                        continue
                     else:
-                        response_text = await response.text()
-                        st.warning(f"⚠️ エンドポイント失敗: {endpoint.split('models/')[1].split(':')[0]}")
+                        model_name = endpoint.split('models/')[1].split(':')[0]
+                        error_messages.append(f"**{model_name}**: Status {response.status}\n```\n{response_text}\n```")
                         continue
                         
         except Exception as e:
-            # エラーの場合も次のエンドポイントを試す
+            model_name = endpoint.split('models/')[1].split(':')[0]
+            error_messages.append(f"**{model_name}**: {str(e)}")
             continue
     
-    # すべて失敗した場合
-    st.error("❌ すべてのモデルで失敗しました。APIキーを確認してください。")
+    # すべて失敗した場合 - 詳細なエラー情報を表示
+    st.error("❌ すべてのモデルで失敗しました")
+    
+    with st.expander("🔍 詳細なエラー情報", expanded=True):
+        st.markdown("### 各モデルのエラー:")
+        for error_msg in error_messages:
+            st.markdown(error_msg)
+        
+        st.markdown("---")
+        st.markdown("### APIキー確認:")
+        if GEMINI_API_KEY:
+            # APIキーの最初と最後の数文字のみ表示
+            masked_key = f"{GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}"
+            st.code(masked_key)
+            st.markdown(f"**キー長:** {len(GEMINI_API_KEY)} 文字")
+            st.markdown(f"**先頭:** {GEMINI_API_KEY[:7]}")
+        
+        st.markdown("---")
+        st.markdown("### トラブルシューティング:")
+        st.markdown("""
+        1. **APIキーの確認**
+           - `AIzaSy` で始まっているか
+           - 余計なスペースや改行がないか
+           - 引用符（`"` や `'`）が含まれていないか
+        
+        2. **新しいAPIキーを作成**
+           - [Google AI Studio](https://aistudio.google.com/app/apikey)
+           - 既存のキーではなく、新規作成を推奨
+        
+        3. **Streamlit Secretsの形式**
+           ```toml
+           GEMINI_API_KEY = "AIzaSy..."
+           ```
+           ※引用符も含めて正確に
+        
+        4. **APIの有効化**
+           - Google Cloud ConsoleでGenerative Language APIが有効か確認
+        """)
+    
     return None
 
 # 現在のディレクトリとファイル一覧を確認
