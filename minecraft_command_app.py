@@ -28,7 +28,7 @@ GEMINI_ENDPOINTS = [
 
 # 正規化プロンプト
 NORMALIZATION_PROMPT = """あなたは「Minecraftコマンド生成のための自然言語正規化エンジン」です。
-ユーザーの曖昧な自然言語を、明確で一貫した "正規化出力" に変換してください。
+ユーザーの曖昧な自然言語を、明確で一貫した “正規化出力” に変換してください。
 
 ────────────────────────
 【出力形式】
@@ -67,7 +67,7 @@ NORMALIZATION_PROMPT = """あなたは「Minecraftコマンド生成のための
 ────────────────────────
 
 【Minecraft用語マッピング】
-以下の表現は必ず指定の"正規アイテム名/効果名"に変換する。
+以下の表現は必ず指定の“正規アイテム名/効果名”に変換する。
 
 ■道具
 掘るやつ/採掘道具/ツルハシ/つるはし/ピッケル → ピッケル  
@@ -314,6 +314,53 @@ def log_research_data(
         
     except Exception as e:
         st.error(f"Google Sheets記録エラー: {e}")
+        return False
+
+# ========== ローカルログ記録（フォールバック） ==========
+def log_to_local(
+    user_input,
+    normalized_text,
+    hybrid_commands,
+    ai_direct_commands,
+    edition,
+    hybrid_time=None,
+    ai_time=None,
+    hybrid_error=None,
+    ai_error=None,
+    used_model=None
+):
+    """
+    ローカルファイルに記録（Google Sheets利用不可の場合）
+    """
+    try:
+        log_data = {
+            "timestamp": datetime.now().isoformat(),
+            "session_id": st.session_state.session_id,
+            "user_input": user_input,
+            "normalized_text": normalized_text,
+            "hybrid_commands": hybrid_commands,
+            "ai_direct_commands": ai_direct_commands,
+            "edition": edition,
+            "hybrid_time": hybrid_time,
+            "ai_time": ai_time,
+            "hybrid_error": hybrid_error,
+            "ai_error": ai_error,
+            "used_model": used_model
+        }
+        
+        # セッション状態にログを保存
+        if 'local_logs' not in st.session_state:
+            st.session_state.local_logs = []
+        
+        st.session_state.local_logs.append(log_data)
+        
+        # 最新100件のみ保持
+        if len(st.session_state.local_logs) > 100:
+            st.session_state.local_logs = st.session_state.local_logs[-100:]
+        
+        return True
+    except Exception as e:
+        st.error(f"ローカルログエラー: {e}")
         return False
 
 # ========== AI正規化関数 ==========
@@ -720,20 +767,20 @@ if menu == "🏠 ホーム":
         1. 左メニューから機能を選択
         2. やりたいことを日本語で入力
         3. コマンドが自動生成されます
-        4. **評価を入力して送信**（必須）
+        4. コピー＆ペーストして使用
         """)
     
     st.markdown("---")
     st.markdown("### 📊 研究データ収集について")
     
     if st.session_state.enable_logging:
-        st.info("✅ **データ記録: 有効** - あなたの入力と評価が研究用に記録されます")
+        st.info("✅ **データ記録: 有効** - あなたの入力と生成結果が研究用に記録されます")
         st.markdown("""
         **記録される情報:**
         - 入力文と生成されたコマンド
         - 処理時間とエラー情報
         - 使用したAIモデル
-        - **ユーザー評価（必須）**
+        - ユーザー評価（任意）
         
         このデータは機械学習モデルの改善に使用されます。
         """)
@@ -932,43 +979,57 @@ elif menu == "🛠 コマンド生成":
                         ai_time_log = time.time() - ai_start
                         ai_error_log = str(e)
             
-            # 生成データをセッション状態に保存（フォーム送信後もアクセス可能にする）
-            generation_data_key = f'generation_data_{generation_id}'
-            st.session_state[generation_data_key] = {
-                'user_input': user_input,
-                'normalized_text': normalized_text_log,
-                'hybrid_commands': hybrid_commands_log,
-                'ai_direct_commands': ai_direct_commands_log,
-                'edition': st.session_state.edition,
-                'hybrid_time': hybrid_time_log,
-                'ai_time': ai_time_log,
-                'hybrid_error': hybrid_error_log,
-                'ai_error': ai_error_log,
-                'used_model': used_model_log
-            }
+            # Google Sheetsに記録
+            if st.session_state.enable_logging:
+                with st.spinner("📝 データを記録中..."):
+                    if GSPREAD_AVAILABLE:
+                        success = log_research_data(
+                            user_input,
+                            normalized_text_log,
+                            hybrid_commands_log,
+                            ai_direct_commands_log,
+                            st.session_state.edition,
+                            hybrid_time=hybrid_time_log,
+                            ai_time=ai_time_log,
+                            hybrid_error=hybrid_error_log,
+                            ai_error=ai_error_log,
+                            used_model=used_model_log
+                        )
+                        if success:
+                            st.success("✅ Google Sheetsに記録しました")
+                    else:
+                        # ローカルログにフォールバック
+                        log_to_local(
+                            user_input,
+                            normalized_text_log,
+                            hybrid_commands_log,
+                            ai_direct_commands_log,
+                            st.session_state.edition,
+                            hybrid_time=hybrid_time_log,
+                            ai_time=ai_time_log,
+                            hybrid_error=hybrid_error_log,
+                            ai_error=ai_error_log,
+                            used_model=used_model_log
+                        )
+                        st.info("📝 ローカルログに記録しました（Google Sheets未設定）")
             
-            st.write(f"✅ データを保存しました (キー: {generation_data_key})")
-            st.write(f"📦 保存内容: user_input={user_input[:20]}..., hybrid_commands={hybrid_commands_log[:50] if hybrid_commands_log else 'なし'}...")
-            
-            # ユーザー評価UI（生成結果と同時に表示）
+            # ユーザーフィードバックUI
             st.markdown("---")
-            st.markdown("### 📝 この結果を評価してください")
-            st.info("⚠️ **評価は必須です。送信ボタンを押すとデータが記録されます。**")
+            st.markdown("### 📝 この結果を評価してください（任意）")
             
-            # 送信済みかチェック
-            submitted_key = f'submitted_{generation_id}'
-            if st.session_state.get(submitted_key, False):
-                st.success("✅ このデータは既に送信済みです")
-            else:
-                # フォームで評価と記録を同時処理
+            # フィードバック送信フラグをセッション状態で管理
+            feedback_key = f"feedback_sent_{generation_id}"
+            if feedback_key not in st.session_state:
+                st.session_state[feedback_key] = False
+            
+            if not st.session_state[feedback_key]:
+                # フォームを使用してリロードを防ぐ
                 with st.form(key=f"feedback_form_{generation_id}"):
-                    st.write(f"🔑 フォームID: feedback_form_{generation_id}")
-                    
                     col_fb1, col_fb2, col_fb3 = st.columns([2, 2, 3])
                     
                     with col_fb1:
                         user_rating = st.select_slider(
-                            "総合評価 ⭐",
+                            "総合評価",
                             options=[1, 2, 3, 4, 5],
                             value=3,
                             help="1: 悪い 〜 5: 良い"
@@ -978,8 +1039,7 @@ elif menu == "🛠 コマンド生成":
                         preferred_version = st.radio(
                             "どちらが良かったですか？",
                             ["ハイブリッド版", "AI単体版", "どちらも同じ"],
-                            horizontal=True,
-                            index=2
+                            horizontal=True
                         )
                     
                     with col_fb3:
@@ -988,68 +1048,49 @@ elif menu == "🛠 コマンド生成":
                             placeholder="改善点や感想など..."
                         )
                     
-                    submit_feedback = st.form_submit_button("📤 評価を送信してデータを記録", type="primary", use_container_width=True)
+                    submit_feedback = st.form_submit_button("📤 フィードバックを送信", use_container_width=True)
                     
                     if submit_feedback:
-                        st.write("🎯 送信ボタンが押されました！")
-                        
-                        # デバッグ: セッション状態から生成データを取得
-                        gen_data = st.session_state.get(generation_data_key, {})
-                        
-                        # デバッグ情報を表示
-                        st.write("🔍 デバッグ情報:")
-                        st.write(f"- generation_id: {generation_id}")
-                        st.write(f"- enable_logging: {st.session_state.enable_logging}")
-                        st.write(f"- GSPREAD_AVAILABLE: {GSPREAD_AVAILABLE}")
-                        st.write(f"- gen_data存在: {bool(gen_data)}")
-                        st.write(f"- gen_data keys: {list(gen_data.keys())}")
-                        
-                        if not gen_data:
-                            st.error("❌ 生成データが見つかりません！")
-                            st.write(f"探したキー: {generation_data_key}")
-                            st.write(f"セッション状態のキー: {[k for k in st.session_state.keys() if 'generation_data' in k]}")
-                        
-                        # Google Sheetsに記録（評価込み）
-                        if st.session_state.enable_logging:
-                            if GSPREAD_AVAILABLE:
-                                st.write("📝 Google Sheets記録を開始...")
+                        if GSPREAD_AVAILABLE:
+                            # 最新行を更新する処理
+                            try:
+                                credentials_dict = dict(st.secrets["gcp_service_account"])
+                                scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                                credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+                                client = gspread.authorize(credentials)
                                 
-                                try:
-                                    success = log_research_data(
-                                        gen_data.get('user_input', user_input),
-                                        gen_data.get('normalized_text', ''),
-                                        gen_data.get('hybrid_commands', ''),
-                                        gen_data.get('ai_direct_commands', ''),
-                                        gen_data.get('edition', st.session_state.edition),
-                                        hybrid_time=gen_data.get('hybrid_time'),
-                                        ai_time=gen_data.get('ai_time'),
-                                        hybrid_error=gen_data.get('hybrid_error'),
-                                        ai_error=gen_data.get('ai_error'),
-                                        used_model=gen_data.get('used_model'),
-                                        user_rating=user_rating,
-                                        preferred_version=preferred_version,
-                                        user_comment=user_comment
-                                    )
-                                    st.write(f"✅ log_research_data 結果: {success}")
+                                spreadsheet_url = st.secrets.get("SPREADSHEET_URL", None)
+                                if spreadsheet_url:
+                                    spreadsheet = client.open_by_url(spreadsheet_url)
+                                else:
+                                    spreadsheet = client.open("Minecraft Command Generation Log")
+                                
+                                worksheet = spreadsheet.sheet1
+                                
+                                # 最新行を検索（セッションIDとタイムスタンプで照合）
+                                all_values = worksheet.get_all_values()
+                                
+                                # 最後の行を更新
+                                last_row_num = len(all_values)
+                                
+                                if last_row_num > 1:  # ヘッダー行以外が存在する場合
+                                    # M, N, O列（評価、好みの版、コメント）を更新
+                                    worksheet.update_cell(last_row_num, 13, str(user_rating))  # M列
+                                    worksheet.update_cell(last_row_num, 14, preferred_version)  # N列
+                                    worksheet.update_cell(last_row_num, 15, user_comment)      # O列
                                     
-                                    if success:
-                                        st.success("✅ 評価とデータをGoogle Sheetsに記録しました！ありがとうございます 🎉")
-                                        st.balloons()
-                                        # 記録済みフラグを設定
-                                        st.session_state[submitted_key] = True
-                                    else:
-                                        st.error("❌ Google Sheetsへの記録に失敗しました（関数がFalseを返しました）")
-                                except Exception as e:
-                                    st.error(f"❌ エラーが発生しました: {e}")
-                                    import traceback
-                                    st.code(traceback.format_exc())
-                            else:
-                                st.warning("⚠️ gspreadライブラリが利用できません")
-                                st.write("requirements.txtに以下を追加してください:")
-                                st.code("gspread\noauth2client")
+                                    st.success("✅ フィードバックを送信しました！ありがとうございます")
+                                    st.session_state[feedback_key] = True
+                                    st.rerun()
+                                else:
+                                    st.error("❌ 記録された行が見つかりませんでした")
+                                    
+                            except Exception as e:
+                                st.error(f"フィードバック送信エラー: {e}")
                         else:
-                            st.warning("⚠️ データ記録が無効になっています。設定ページで有効にしてください。")
-            
+                            st.warning("⚠️ Google Sheets未設定のため、フィードバックを送信できません")
+            else:
+                st.success("✅ フィードバックは既に送信済みです")
             st.markdown("---")
             st.markdown("### 💡 比較ポイント")
             col_compare1, col_compare2 = st.columns(2)
@@ -1205,12 +1246,36 @@ elif menu == "⚙️ 設定":
                     
                     #### 6️⃣ テスト
                     1. アプリを再起動
-                    2. コマンドを1回生成し、評価を送信
+                    2. コマンドを1回生成
                     3. スプレッドシートに行が追加されていればOK✅
                     """)
         else:
             st.error("❌ gspreadライブラリがインストールされていません")
             st.code("requirements.txt に以下を追加:\ngspread\noauth2client")
+        
+        # ローカルログのダウンロード
+        if 'local_logs' in st.session_state and st.session_state.local_logs:
+            st.markdown("---")
+            st.markdown("### 💾 ローカルログ")
+            st.info(f"📝 {len(st.session_state.local_logs)}件のログが保存されています")
+            
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                if st.button("📥 JSONでダウンロード", use_container_width=True):
+                    log_json = json.dumps(st.session_state.local_logs, ensure_ascii=False, indent=2)
+                    st.download_button(
+                        label="💾 ダウンロード開始",
+                        data=log_json,
+                        file_name=f"command_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json",
+                        use_container_width=True
+                    )
+            
+            with col_dl2:
+                if st.button("🗑️ ローカルログをクリア", use_container_width=True):
+                    st.session_state.local_logs = []
+                    st.success("✅ ローカルログをクリアしました")
+                    st.rerun()
     else:
         st.info("ℹ️ データ記録: 無効")
     
@@ -1241,4 +1306,4 @@ elif menu == "⚙️ 設定":
 # フッター
 st.markdown("---")
 st.markdown("*Minecraftコマンド生成ツール - 研究用データ収集機能付き*")
-st.markdown("🎮 統合版・Java版両対応 | 📊 研究データ自動記録（評価必須）")
+st.markdown("🎮 統合版・Java版両対応 | 📊 研究データ自動記録")
