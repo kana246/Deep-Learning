@@ -16,12 +16,12 @@ except ImportError:
 
 # Gemini APIの設定
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
-# Gemini 2.0モデルを優先的に試す
+# Gemini 1.5モデルを優先（2.0はクォータ制限が厳しい）
 GEMINI_ENDPOINTS = [
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
 ]
 GEMINI_API_URL = GEMINI_ENDPOINTS[0]  # デフォルト
@@ -335,8 +335,6 @@ async def generate_command_directly(user_input, edition):
     
     import aiohttp
     
-    error_messages = []
-    
     # 複数のエンドポイントを試す
     for endpoint in GEMINI_ENDPOINTS:
         try:
@@ -376,6 +374,10 @@ async def generate_command_directly(user_input, edition):
                                 return generated_commands
                         
                         return None
+                    elif response.status == 429:
+                        # レート制限エラー - 次のモデルを試す
+                        st.warning(f"⚠️ {endpoint.split('models/')[1].split(':')[0]}: クォータ超過、次のモデルを試行中...")
+                        continue
                     else:
                         continue
                         
