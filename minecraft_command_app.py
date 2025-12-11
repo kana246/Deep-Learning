@@ -4,24 +4,15 @@ import sys
 import os
 import importlib.util
 import json
-from datetime import datetime
-
-# Google Sheets API用
-try:
-    import gspread
-    from oauth2client.service_account import ServiceAccountCredentials
-    GSPREAD_AVAILABLE = True
-except ImportError:
-    GSPREAD_AVAILABLE = False
 
 # Gemini APIの設定
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
-# Gemini 1.5モデルを優先（2.0はクォータ制限が厳しい）
+# Gemini 2.0モデルを優先的に試す
 GEMINI_ENDPOINTS = [
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
 ]
 GEMINI_API_URL = GEMINI_ENDPOINTS[0]  # デフォルト
@@ -197,86 +188,6 @@ DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです
 
 【生成されたコマンド】"""
 
-# ========== Google Sheets記録関数 ==========
-def log_to_google_sheets(user_input, normalized_text, hybrid_commands, ai_direct_commands, edition):
-    """
-    Google Spreadsheetsに記録
-    """
-    if not st.session_state.enable_logging:
-        return False
-    
-    try:
-        # Google Sheets認証情報を取得
-        if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
-            credentials_dict = dict(st.secrets["gcp_service_account"])
-        else:
-            st.warning("⚠️ Google Sheets認証情報が設定されていません")
-            return False
-        
-        # 認証
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
-        client = gspread.authorize(credentials)
-        
-        # スプレッドシートを開く
-        spreadsheet_url = st.secrets.get("SPREADSHEET_URL", None)
-        if spreadsheet_url:
-            spreadsheet = client.open_by_url(spreadsheet_url)
-        else:
-            # スプレッドシート名で開く
-            spreadsheet = client.open("Minecraft Command Generation Log")
-        
-        worksheet = spreadsheet.sheet1
-        
-        # データを追加
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        row_data = [
-            timestamp,
-            user_input,
-            normalized_text or "",
-            hybrid_commands or "",
-            ai_direct_commands or "",
-            edition
-        ]
-        
-        worksheet.append_row(row_data)
-        return True
-        
-    except Exception as e:
-        st.error(f"Google Sheets記録エラー: {e}")
-        return False
-
-# ========== ローカルログ記録（フォールバック） ==========
-def log_to_local(user_input, normalized_text, hybrid_commands, ai_direct_commands, edition):
-    """
-    ローカルファイルに記録（Google Sheets利用不可の場合）
-    """
-    try:
-        log_data = {
-            "timestamp": datetime.now().isoformat(),
-            "user_input": user_input,
-            "normalized_text": normalized_text,
-            "hybrid_commands": hybrid_commands,
-            "ai_direct_commands": ai_direct_commands,
-            "edition": edition
-        }
-        
-        # セッション状態にログを保存
-        if 'local_logs' not in st.session_state:
-            st.session_state.local_logs = []
-        
-        st.session_state.local_logs.append(log_data)
-        
-        # 最新100件のみ保持
-        if len(st.session_state.local_logs) > 100:
-            st.session_state.local_logs = st.session_state.local_logs[-100:]
-        
-        return True
-    except Exception as e:
-        st.error(f"ローカルログエラー: {e}")
-        return False
-
 # ========== 利用可能なモデルをチェック ==========
 async def check_available_models():
     """
@@ -317,6 +228,8 @@ async def generate_command_directly(user_input, edition):
     
     import aiohttp
     
+    error_messages = []
+    
     # 複数のエンドポイントを試す
     for endpoint in GEMINI_ENDPOINTS:
         try:
@@ -356,10 +269,6 @@ async def generate_command_directly(user_input, edition):
                                 return generated_commands
                         
                         return None
-                    elif response.status == 429:
-                        # レート制限エラー - 次のモデルを試す
-                        st.warning(f"⚠️ {endpoint.split('models/')[1].split(':')[0]}: クォータ超過、次のモデルを試行中...")
-                        continue
                     else:
                         continue
                         
@@ -682,9 +591,7 @@ if 'use_ai_normalization' not in st.session_state:
 if 'normalized_text' not in st.session_state:
     st.session_state.normalized_text = ''
 if 'generation_mode' not in st.session_state:
-    st.session_state.generation_mode = 'both'  # 'hybrid', 'ai_only', or 'both'
-if 'enable_logging' not in st.session_state:
-    st.session_state.enable_logging = True
+    st.session_state.generation_mode = 'hybrid'  # 'hybrid' or 'ai_only'
 
 # ========== コマンド検索関数 ==========
 def search_commands(query, edition):
@@ -924,21 +831,11 @@ elif menu == "🛠 コマンド生成":
     
     # 生成モード選択
     st.markdown("### 生成モード選択")
-    col_mode1, col_mode2, col_mode3 = st.columns(3)
+    col_mode1, col_mode2 = st.columns(2)
     
     with col_mode1:
-        mode_both = st.button(
-            "⚖️ 両方比較（推奨）",
-            type="primary" if st.session_state.generation_mode == 'both' else "secondary",
-            use_container_width=True,
-            help="ハイブリッド版とAI単体版を同時に表示"
-        )
-        if mode_both:
-            st.session_state.generation_mode = 'both'
-    
-    with col_mode2:
         mode_hybrid = st.button(
-            "🔄 ハイブリッド版のみ",
+            "🔄 ハイブリッド版（推奨）",
             type="primary" if st.session_state.generation_mode == 'hybrid' else "secondary",
             use_container_width=True,
             help="AI正規化 → ルールベース生成"
@@ -946,9 +843,9 @@ elif menu == "🛠 コマンド生成":
         if mode_hybrid:
             st.session_state.generation_mode = 'hybrid'
     
-    with col_mode3:
+    with col_mode2:
         mode_ai = st.button(
-            "🤖 AI単体版のみ",
+            "🤖 AI単体版",
             type="primary" if st.session_state.generation_mode == 'ai_only' else "secondary",
             use_container_width=True,
             help="AIが直接コマンドを生成"
@@ -957,21 +854,39 @@ elif menu == "🛠 コマンド生成":
             st.session_state.generation_mode = 'ai_only'
     
     # 現在のモード表示
-    if st.session_state.generation_mode == 'both':
-        st.info("⚖️ **比較モード**: ハイブリッド版とAI単体版を同時表示")
-    elif st.session_state.generation_mode == 'hybrid':
+    if st.session_state.generation_mode == 'hybrid':
         st.info("📊 **ハイブリッド版**: AI正規化 → ルールベース生成（精度重視）")
     else:
         st.info("🚀 **AI単体版**: AIが直接コマンドを生成（柔軟性重視）")
     
     st.markdown("---")
     
-    # API キーの確認
-    if not GEMINI_API_KEY and st.session_state.generation_mode != 'hybrid':
-        st.error("❌ Gemini APIキーが設定されていません。AI機能を使用するには設定が必要です。")
-        st.stop()
-    
-    st.markdown("### やりたいことを自然な日本語で入力してください")
+    # AI設定（ハイブリッドモードのみ）
+    if st.session_state.generation_mode == 'hybrid':
+        col_ai1, col_ai2 = st.columns([3, 1])
+        with col_ai1:
+            st.markdown("### やりたいことを自然な日本語で入力してください")
+        with col_ai2:
+            use_ai = st.toggle(
+                "🤖 AI正規化",
+                value=st.session_state.use_ai_normalization,
+                help="Gemini APIで自然言語を理解します",
+                key="ai_toggle"
+            )
+            st.session_state.use_ai_normalization = use_ai
+        
+        # API キーの確認
+        if use_ai and not GEMINI_API_KEY:
+            st.warning("⚠️ Gemini APIキーが設定されていません。Streamlit Secretsに`GEMINI_API_KEY`を追加してください。")
+            st.info("AI正規化なしで動作します。")
+            use_ai = False
+    else:
+        st.markdown("### やりたいことを自然な日本語で入力してください")
+        use_ai = True  # AI単体版では常にAI使用
+        
+        if not GEMINI_API_KEY:
+            st.error("❌ Gemini APIキーが設定されていません。AI単体版を使用するには設定が必要です。")
+            st.stop()
     
     user_input = st.text_area(
         "入力例",
@@ -982,206 +897,77 @@ elif menu == "🛠 コマンド生成":
     )
     
     # 処理ボタン
-    generate_btn = st.button("🚀 コマンド生成", type="primary", use_container_width=True)
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        generate_btn = st.button("🚀 コマンド生成", type="primary", use_container_width=True)
     
     if generate_btn and user_input:
         st.session_state.user_input = user_input
         
-        # データ記録用の変数
-        normalized_text_log = ""
-        hybrid_commands_log = ""
-        ai_direct_commands_log = ""
-        
-        # ========== 両方比較モード ==========
-        if st.session_state.generation_mode == 'both':
-            st.markdown("---")
-            st.markdown("## 📊 生成結果の比較")
-            
-            col_result1, col_result2 = st.columns(2)
-            
-            # 左側: ハイブリッド版
-            with col_result1:
-                st.markdown("### 🔄 ハイブリッド版")
-                st.caption("AI正規化 → ルールベース生成")
+        # ========== AI単体版 ==========
+        if st.session_state.generation_mode == 'ai_only':
+            with st.spinner("🤖 AIがコマンドを生成しています..."):
+                import asyncio
+                generated_commands = asyncio.run(generate_command_directly(user_input, st.session_state.edition))
                 
-                with st.spinner("処理中..."):
-                    import asyncio
+                if generated_commands:
+                    st.success("✅ AI単体版でコマンド生成完了")
                     
-                    # AI正規化
-                    if GEMINI_API_KEY:
-                        normalized = asyncio.run(normalize_with_gemini(user_input))
-                        if normalized:
-                            st.success("✅ 正規化完了")
-                            st.info(f"**理解:** {normalized}")
-                            search_text = normalized
-                            normalized_text_log = normalized
-                        else:
-                            st.warning("⚠️ 正規化失敗")
-                            search_text = user_input
-                    else:
-                        search_text = user_input
+                    # 生成されたコマンドを表示
+                    commands_list = [cmd.strip() for cmd in generated_commands.split('\n') if cmd.strip()]
                     
-                    # コマンド検索
-                    candidates = search_commands(search_text, st.session_state.edition)
-                    
-                    # ハイブリッドコマンドを記録
-                    hybrid_commands_list = []
-                    
-                    if candidates:
-                        for i, cmd in enumerate(candidates):
-                            cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
-                            item_name = cmd.get('item_name', '')
+                    for i, cmd in enumerate(commands_list):
+                        with st.expander(f"📋 生成されたコマンド {i+1}", expanded=True):
+                            st.code(cmd, language='bash')
                             
-                            if item_name:
-                                title = f"{cmd_name}: {item_name}"
-                            else:
-                                title = f"{cmd_name}"
-                            
-                            command_text = cmd.get('cmd', '')
-                            hybrid_commands_list.append(command_text)
-                            
-                            with st.container(border=True):
-                                st.markdown(f"**{title}**")
-                                st.code(command_text, language='bash')
-                                
-                                # アイテム選択
-                                if '{item_id}' in cmd.get('cmd_template', '') and ITEMS:
-                                    current_item_key = cmd.get('matched_item_key', list(ITEMS.keys())[0])
-                                    item_names = [item.get('name', k) for k, item in ITEMS.items()]
-                                    current_item_name = ITEMS.get(current_item_key, {}).get('name', item_names[0])
-                                    
-                                    try:
-                                        default_index = item_names.index(current_item_name)
-                                    except ValueError:
-                                        default_index = 0
-                                    
-                                    selected_item = st.selectbox(
-                                        "アイテム変更",
-                                        options=item_names,
-                                        index=default_index,
-                                        key=f"hybrid_item_{i}",
-                                    )
-                                    
-                                    for item_key, item in ITEMS.items():
-                                        if item.get('name', item_key) == selected_item:
-                                            item_id_data = item.get('id', {})
-                                            if isinstance(item_id_data, dict):
-                                                item_id = item_id_data.get(st.session_state.edition, item_key)
-                                            else:
-                                                item_id = item_id_data
-                                            updated_cmd = cmd['cmd_template'].replace('{item_id}', item_id)
-                                            st.code(updated_cmd, language='bash')
-                                            break
-                                
-                                with st.expander("詳細"):
-                                    st.markdown(f"**解説:** {cmd.get('desc', '')}")
-                                    if 'note' in cmd and cmd['note']:
-                                        st.markdown(f"**補足:** {cmd['note']}")
-                        
-                        hybrid_commands_log = " | ".join(hybrid_commands_list)
-                    else:
-                        st.warning("⚠️ コマンドが見つかりませんでした")
-            
-            # 右側: AI単体版
-            with col_result2:
-                st.markdown("### 🤖 AI単体版")
-                st.caption("AIが直接コマンドを生成")
-                
-                with st.spinner("AIが生成中..."):
-                    import asyncio
-                    generated_commands = asyncio.run(generate_command_directly(user_input, st.session_state.edition))
-                    
-                    if generated_commands:
-                        st.success("✅ 生成完了")
-                        
-                        commands_list = [cmd.strip() for cmd in generated_commands.split('\n') if cmd.strip()]
-                        ai_direct_commands_log = " | ".join(commands_list)
-                        
-                        for i, cmd in enumerate(commands_list):
-                            with st.container(border=True):
-                                st.markdown(f"**コマンド {i+1}**")
-                                st.code(cmd, language='bash')
-                                
-                                with st.expander("特徴"):
-                                    st.markdown("- 柔軟な解釈")
-                                    st.markdown("- 自動ID変換")
-                                    st.markdown("- 複雑な要求対応")
-                    else:
-                        st.error("❌ 生成失敗")
-            
-            # Google Sheetsに記録
-            if st.session_state.enable_logging:
-                with st.spinner("📝 データを記録中..."):
-                    if GSPREAD_AVAILABLE:
-                        success = log_to_google_sheets(
-                            user_input,
-                            normalized_text_log,
-                            hybrid_commands_log,
-                            ai_direct_commands_log,
-                            st.session_state.edition
-                        )
-                        if success:
-                            st.success("✅ Google Sheetsに記録しました")
-                    else:
-                        # ローカルログにフォールバック
-                        log_to_local(
-                            user_input,
-                            normalized_text_log,
-                            hybrid_commands_log,
-                            ai_direct_commands_log,
-                            st.session_state.edition
-                        )
-                        st.info("📝 ローカルログに記録しました（Google Sheets未設定）")
-            
-            st.markdown("---")
-            st.markdown("### 💡 比較ポイント")
-            col_compare1, col_compare2 = st.columns(2)
-            with col_compare1:
-                st.markdown("""
-                **ハイブリッド版の強み:**
-                - ✅ 高精度なアイテムID
-                - ✅ データベースに基づく確実性
-                - ✅ アイテム選択UI
-                - ✅ 詳細な解説付き
-                """)
-            with col_compare2:
-                st.markdown("""
-                **AI単体版の強み:**
-                - ✅ 複雑な要求に対応
-                - ✅ 柔軟な解釈
-                - ✅ データベース不要
-                - ✅ 即座に生成
-                """)
+                            st.markdown("---")
+                            st.markdown("**💡 AI単体版の特徴:**")
+                            st.markdown("- 柔軟な解釈が可能")
+                            st.markdown("- 複雑な要求に対応")
+                            st.markdown("- アイテムIDの変換も自動")
+                else:
+                    st.error("❌ コマンド生成に失敗しました")
         
-        # ========== ハイブリッド版のみ ==========
-        elif st.session_state.generation_mode == 'hybrid':
-            use_ai = GEMINI_API_KEY is not None
-            
+        # ========== ハイブリッド版 ==========
+        else:
+            # AI正規化を使用する場合
             if use_ai:
                 with st.spinner("🤖 AIが入力を理解しています..."):
                     import asyncio
+                    
+                    # デバッグモード
+                    with st.expander("🔍 デバッグ情報", expanded=False):
+                        st.markdown("**送信するプロンプト:**")
+                        debug_prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
+                        st.code(debug_prompt[:500] + "..." if len(debug_prompt) > 500 else debug_prompt)
+                    
                     normalized = asyncio.run(normalize_with_gemini(user_input))
                     
                     if normalized:
                         st.session_state.normalized_text = normalized
                         st.success("✅ AI正規化完了")
                         st.info(f"**理解した内容:** {normalized}")
+                        
+                        # 正規化されたテキストでコマンド検索
                         search_text = normalized
                     else:
                         st.warning("⚠️ AI正規化に失敗しました。元の入力で検索します。")
+                        st.info("💡 プロンプトを調整するか、APIキーを確認してください")
                         search_text = user_input
             else:
                 search_text = user_input
             
+            # コマンド検索
             candidates = search_commands(search_text, st.session_state.edition)
             
             if candidates:
-                st.success(f"✅ {len(candidates)}件のコマンドが見つかりました")
+                st.success(f"✅ {len(candidates)}件のコマンドが見つかりました（ハイブリッド版）")
                 
                 for i, cmd in enumerate(candidates):
                     cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
                     item_name = cmd.get('item_name', '')
                     
+                    # タイトル表示
                     if item_name:
                         expander_title = f"📋 {cmd_name}: {item_name}を与える"
                     else:
@@ -1190,10 +976,12 @@ elif menu == "🛠 コマンド生成":
                     with st.expander(expander_title, expanded=(i==0)):
                         st.code(cmd.get('cmd', ''), language='bash')
                         
+                        # アイテム選択（必要な場合のみ）
                         if '{item_id}' in cmd.get('cmd_template', '') and ITEMS:
                             st.markdown("---")
                             st.markdown("**🔄 アイテムを変更:**")
                             
+                            # 現在選択されているアイテムをデフォルトに
                             current_item_key = cmd.get('matched_item_key', list(ITEMS.keys())[0])
                             item_names = [item.get('name', k) for k, item in ITEMS.items()]
                             current_item_name = ITEMS.get(current_item_key, {}).get('name', item_names[0])
@@ -1211,6 +999,7 @@ elif menu == "🛠 コマンド生成":
                                 label_visibility="collapsed"
                             )
                             
+                            # アイテム変更時にコマンドを更新
                             for item_key, item in ITEMS.items():
                                 if item.get('name', item_key) == selected_item:
                                     item_id_data = item.get('id', {})
@@ -1230,29 +1019,17 @@ elif menu == "🛠 コマンド生成":
                             st.markdown(f"**🏷️ カテゴリ:** {cmd['category']}")
             else:
                 st.warning("⚠️ 該当するコマンドが見つかりませんでした")
-        
-        # ========== AI単体版のみ ==========
-        else:
-            with st.spinner("🤖 AIがコマンドを生成しています..."):
-                import asyncio
-                generated_commands = asyncio.run(generate_command_directly(user_input, st.session_state.edition))
-                
-                if generated_commands:
-                    st.success("✅ AI単体版でコマンド生成完了")
-                    
-                    commands_list = [cmd.strip() for cmd in generated_commands.split('\n') if cmd.strip()]
-                    
-                    for i, cmd in enumerate(commands_list):
-                        with st.expander(f"📋 生成されたコマンド {i+1}", expanded=True):
-                            st.code(cmd, language='bash')
-                            
-                            st.markdown("---")
-                            st.markdown("**💡 AI単体版の特徴:**")
-                            st.markdown("- 柔軟な解釈が可能")
-                            st.markdown("- 複雑な要求に対応")
-                            st.markdown("- アイテムIDの変換も自動")
-                else:
-                    st.error("❌ コマンド生成に失敗しました")
+                st.markdown("**ヒント:** 以下のキーワードを試してください")
+                # 利用可能なキーワードを表示
+                all_keywords = set()
+                for cmd in COMMANDS:
+                    keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
+                    all_keywords.update(keywords)
+                sample_keywords = list(all_keywords)[:15]
+                cols = st.columns(3)
+                for idx, keyword in enumerate(sample_keywords):
+                    with cols[idx % 3]:
+                        st.markdown(f"- {keyword}")
 
 # ========== アイテム図鑑 ==========
 elif menu == "📘 アイテム図鑑":
@@ -1414,128 +1191,6 @@ elif menu == "⚙️ 設定":
     st.success(f"✅ 現在のバージョン: **{st.session_state.edition}**")
     
     st.markdown("---")
-    st.markdown("### 📝 データ記録設定")
-    
-    enable_log = st.toggle(
-        "📊 データをGoogle Sheetsに記録",
-        value=st.session_state.enable_logging,
-        help="入力文と生成結果を記録（機械学習研究用）"
-    )
-    st.session_state.enable_logging = enable_log
-    
-    if enable_log:
-        st.success("✅ データ記録: 有効")
-        
-        with st.expander("📋 記録される情報"):
-            st.markdown("""
-            **記録項目:**
-            1. 📅 タイムスタンプ
-            2. 💬 ユーザー入力（元の文）
-            3. 🤖 AI正規化結果
-            4. 🔄 ハイブリッド版のコマンド
-            5. ⚡ AI単体版のコマンド
-            6. 🎮 エディション（統合版/Java版）
-            
-            **用途:**
-            - 機械学習の訓練データ
-            - 精度評価・比較分析
-            - モデル改善・研究
-            """)
-        
-        # Google Sheets設定状況
-        if GSPREAD_AVAILABLE:
-            if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
-                st.success("✅ Google Sheets API: 設定済み")
-                
-                # スプレッドシートURL確認
-                spreadsheet_url = st.secrets.get("SPREADSHEET_URL", None)
-                if spreadsheet_url:
-                    st.info(f"📊 記録先: [スプレッドシートを開く]({spreadsheet_url})")
-                else:
-                    st.warning("⚠️ SPREADSHEET_URLが設定されていません")
-                
-            else:
-                st.warning("⚠️ Google Sheets API: 未設定")
-                
-                with st.expander("🔧 設定方法"):
-                    st.markdown("""
-                    ### Google Sheets連携の設定手順
-                    
-                    #### 1. Google Cloud Projectを作成
-                    - https://console.cloud.google.com/
-                    - 新しいプロジェクトを作成
-                    
-                    #### 2. APIを有効化
-                    - Google Sheets API
-                    - Google Drive API
-                    
-                    #### 3. サービスアカウントを作成
-                    - JSONキーをダウンロード
-                    
-                    #### 4. スプレッドシートを作成
-                    - 「Minecraft Command Generation Log」という名前
-                    - ヘッダー行: タイムスタンプ | ユーザー入力 | AI正規化結果 | ハイブリッドコマンド | AI単体コマンド | エディション
-                    - サービスアカウントに編集権限を付与
-                    
-                    #### 5. Streamlit Secretsに追加
-                    ```toml
-                    SPREADSHEET_URL = "your-spreadsheet-url"
-                    
-                    [gcp_service_account]
-                    type = "service_account"
-                    project_id = "..."
-                    private_key = "..."
-                    client_email = "..."
-                    ...
-                    ```
-                    """)
-        else:
-            st.error("❌ gspreadライブラリがインストールされていません")
-            st.code("requirements.txt に以下を追加:\ngspread\noauth2client")
-        
-        # ローカルログのダウンロード
-        if 'local_logs' in st.session_state and st.session_state.local_logs:
-            st.markdown("---")
-            st.markdown("### 💾 ローカルログ")
-            st.info(f"📝 {len(st.session_state.local_logs)}件のログが保存されています")
-            
-            col_dl1, col_dl2 = st.columns(2)
-            with col_dl1:
-                if st.button("📥 JSONでダウンロード", use_container_width=True):
-                    log_json = json.dumps(st.session_state.local_logs, ensure_ascii=False, indent=2)
-                    st.download_button(
-                        label="💾 ダウンロード開始",
-                        data=log_json,
-                        file_name=f"command_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                        mime="application/json",
-                        use_container_width=True
-                    )
-            
-            with col_dl2:
-                if st.button("🗑️ ローカルログをクリア", use_container_width=True):
-                    st.session_state.local_logs = []
-                    st.success("✅ ローカルログをクリアしました")
-                    st.rerun()
-    else:
-        st.info("ℹ️ データ記録: 無効")
-    
-    # ローカルログの表示
-    if 'local_logs' in st.session_state and st.session_state.local_logs:
-        with st.expander(f"📜 最近のログ (最新10件)"):
-            for i, log in enumerate(reversed(st.session_state.local_logs[-10:])):
-                st.markdown(f"**{i+1}. {log.get('timestamp', 'N/A')}**")
-                st.markdown(f"- 📝 入力: `{log.get('user_input', '')}`")
-                if log.get('normalized_text'):
-                    st.markdown(f"- 🤖 正規化: `{log['normalized_text']}`")
-                if log.get('hybrid_commands'):
-                    hybrid_preview = log['hybrid_commands'][:80] + '...' if len(log['hybrid_commands']) > 80 else log['hybrid_commands']
-                    st.markdown(f"- 🔄 ハイブリッド: `{hybrid_preview}`")
-                if log.get('ai_direct_commands'):
-                    ai_preview = log['ai_direct_commands'][:80] + '...' if len(log['ai_direct_commands']) > 80 else log['ai_direct_commands']
-                    st.markdown(f"- ⚡ AI単体: `{ai_preview}`")
-                st.markdown("---")
-    
-    st.markdown("---")
     st.markdown("### 🤖 AI機能設定")
     
     st.markdown("**Gemini API キー**")
@@ -1570,74 +1225,6 @@ elif menu == "⚙️ 設定":
         
         **注意:** APIキーは `AIzaSy...` で始まる形式です
         """)
-    
-    st.markdown("---")
-    st.markdown("### 📊 データ記録設定")
-    
-    enable_log = st.toggle(
-        "📝 データをGoogle Sheetsに記録",
-        value=st.session_state.enable_logging,
-        help="入力文と生成結果を記録（機械学習研究用）"
-    )
-    st.session_state.enable_logging = enable_log
-    
-    if enable_log:
-        st.success("✅ データ記録: 有効")
-        
-        with st.expander("📋 記録される情報"):
-            st.markdown("""
-            **記録項目:**
-            1. タイムスタンプ
-            2. ユーザー入力（元の文）
-            3. AI正規化結果
-            4. ハイブリッド版のコマンド
-            5. AI単体版のコマンド
-            6. エディション（統合版/Java版）
-            
-            **用途:**
-            - 機械学習の訓練データ
-            - 精度評価
-            - モデル改善
-            """)
-        
-        # Google Sheets設定状況
-        if GSPREAD_AVAILABLE:
-            if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
-                st.success("✅ Google Sheets API: 設定済み")
-                
-                # ログダウンロードボタン
-                if 'local_logs' in st.session_state and st.session_state.local_logs:
-                    if st.button("💾 ローカルログをダウンロード"):
-                        import json
-                        log_json = json.dumps(st.session_state.local_logs, ensure_ascii=False, indent=2)
-                        st.download_button(
-                            label="📥 JSONファイルをダウンロード",
-                            data=log_json,
-                            file_name=f"command_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                            mime="application/json"
-                        )
-            else:
-                st.warning("⚠️ Google Sheets API: 未設定")
-                st.info("Streamlit Secretsに認証情報を追加してください")
-        else:
-            st.warning("⚠️ gspreadライブラリがインストールされていません")
-            st.info("requirements.txtに追加してください")
-    else:
-        st.info("ℹ️ データ記録: 無効")
-    
-    # ローカルログの表示
-    if 'local_logs' in st.session_state and st.session_state.local_logs:
-        with st.expander(f"📜 ローカルログ ({len(st.session_state.local_logs)}件)"):
-            for i, log in enumerate(reversed(st.session_state.local_logs[-10:])):
-                st.markdown(f"**{i+1}. {log['timestamp']}**")
-                st.markdown(f"- 入力: `{log['user_input']}`")
-                if log['normalized_text']:
-                    st.markdown(f"- 正規化: `{log['normalized_text']}`")
-                if log['hybrid_commands']:
-                    st.markdown(f"- ハイブリッド: `{log['hybrid_commands'][:100]}...`")
-                if log['ai_direct_commands']:
-                    st.markdown(f"- AI単体: `{log['ai_direct_commands'][:100]}...`")
-                st.markdown("---")
     
     st.markdown("---")
     st.markdown("### 📊 データファイル情報")
