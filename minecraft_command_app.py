@@ -4,166 +4,129 @@ import sys
 import os
 import importlib.util
 import json
-from datetime import datetime
-import time
-import uuid
-
-# Google Sheets API用
-try:
-    import gspread
-    from oauth2client.service_account import ServiceAccountCredentials
-    GSPREAD_AVAILABLE = True
-except ImportError:
-    GSPREAD_AVAILABLE = False
 
 # Gemini APIの設定
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
+# Gemini 2.0モデルを優先的に試す
 GEMINI_ENDPOINTS = [
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
 ]
+GEMINI_API_URL = GEMINI_ENDPOINTS[0]  # デフォルト
 
-# 正規化プロンプト
-NORMALIZATION_PROMPT = """あなたは「Minecraftコマンド生成のための自然言語正規化エンジン」です。
-ユーザーの曖昧な自然言語を、明確で一貫した “正規化出力” に変換してください。
+# 正規化プロンプト（ハイブリッド版用）
+NORMALIZATION_PROMPT = """あなたはMinecraftのコマンド生成システムの自然言語正規化エンジンです。
+ユーザーの曖昧な入力を、明確な構造化された形式に変換してください。
 
-────────────────────────
 【出力形式】
-必ず次の形式で出力する：
+「[対象]に[アイテム名/効果名]を[数量]個与える」または「[対象]に[効果名]の効果を付ける」
 
-「[対象]に[アイテム名]を[数量]個与える」
+【対象の種類】
+- 自分/me/@p/私/僕/俺 → 自分
+- あいつ/他の人/ほかのプレイヤー/あの人/彼/彼女/@a → 他のプレイヤー
+- みんな/全員/all/@a → 全プレイヤー
+- 最も近い人/@r → 最も近いプレイヤー
+- 特定のプレイヤー名(例: Steve, Alex) → [プレイヤー名]
+- 対象が省略されている場合 → 自分
 
-
-複数の場合は「、」で区切り、ルールに従って複数行ではなく1行で出力する。
-説明・補足は禁止。正規化結果のみ返す。
-────────────────────────
-
-【対象の正規化ルール】
-以下の単語・表現を必ず次のいずれかに置き換える：
-
-・自分/me/@p/私/僕/俺 → **自分**
-・あいつ/他の人/ほかのプレイヤー/あの人/彼/彼女 → **他のプレイヤー**
-・みんな/全員/all/@a → **全プレイヤー**
-・最も近い人/ランダムな人/@r → **最も近いプレイヤー**
-・固有名 (例: Steve, Alex) → **そのプレイヤー名**
-・対象が書かれていない場合 → **自分**
-
-対象を複数書いてはいけない。もっとも強く示唆された対象を採用する。
-────────────────────────
-
-【数量の正規化】
-以下の語は必ず数値に置き換える：
-
-・大量に/たくさん/いっぱい → 64個
-・1スタック/スタック → 64個
-・半スタック → 32個
-・少し/数個/ちょっと → 5個
-・具体的数値があればその数値を使用
-・数量省略 → **1個**
-※ただし松明などの消耗品は **数量省略 → 10個**
-────────────────────────
+【数量の表現】
+- 大量に/たくさん/いっぱい → 64個
+- 1スタック/スタック → 64個
+- 少し/数個/ちょっと → 5個
+- 半スタック → 32個
+- 具体的な数値があればその数値
+- 省略時 → 1個(ただし松明など消耗品は10個)
 
 【Minecraft用語マッピング】
-以下の表現は必ず指定の“正規アイテム名/効果名”に変換する。
-
 ■道具
-掘るやつ/採掘道具/ツルハシ/つるはし/ピッケル → ピッケル  
-斧/木切るの/伐採道具 → 斧  
-釣り竿/魚釣りたい → 釣り竿  
-水汲むやつ/バケツ → バケツ  
-シャベル/スコップ → シャベル  
+- 掘るやつ/採掘道具/ツルハシ/つるはし/ピッケル/pick → ピッケル
+- 斧/木切るの/伐採道具 → 斧
+- 釣り竿/魚釣りたい → 釣り竿
+- 水汲むやつ/バケツ → バケツ
+- シャベル/スコップ → シャベル
 
 ■武器・防具
-武器/攻撃できるやつ/剣 → 剣  
-弓矢/遠距離武器/bow → 弓  
-防具一式/armor/鎧全部 → 「ヘルメット、チェストプレート、レギンス、ブーツ」に展開  
-頭装備/兜/ヘルメット → ヘルメット  
+- 武器/攻撃できるやつ/剣的なの/けん → 剣
+- 遠距離武器/弓矢/bow → 弓
+- 防具一式/armor/鎧全部 → ヘルメット、チェストプレート、レギンス、ブーツ
+- 頭装備/兜/ヘルメット的なやつ → ヘルメット
 
 ■ブロック・素材
-木材/wood/木のブロック → 木材  
-石ころ/cobblestone/丸石 → 丸石  
-光るやつ/明かり/たいまつ/松明 → 松明  
-土/土ブロック/dirt → 土  
-ガラス/透明なブロック → ガラス  
+- 木材/wood/木のブロック → 木材
+- 石ころ/cobblestone/丸石 → 丸石
+- 光るやつ/明かり/たいまつ/松明/たいまち → 松明
+- 土/dirt/土ブロック → 土
+- ガラス/透明なブロック → ガラス
 
 ■食料
-食べ物/food/腹減った → パン  
-肉/ステーキ/beef → ステーキ  
-パン/bread → パン  
-果物/リンゴ/apple → リンゴ  
+- 食べ物/food/腹減った → パン
+- 肉/ステーキ/beef → ステーキ
+- パン/bread → パン
+- 果物/リンゴ/apple → リンゴ
 
 ■特殊アイテム
-爆弾/爆発するやつ → TNT  
-ワープ/瞬間移動アイテム → エンダーパール  
-寝るやつ/respawn地点 → ベッド  
-時計/時間見るやつ/clock → 時計  
-地図/map → 地図  
+- 爆弾/爆発するやつ → TNT
+- ワープ/瞬間移動アイテム → エンダーパール
+- 寝るやつ/respawn地点 → ベッド
+- 時計/時間見るやつ/clock → 時計
+- 地図/マッピング/map → 地図
 
 ■エフェクト（移動・身体能力）
-足速くして/speed/俊敏 → 俊敏  
-高く飛びたい/jump boost → 跳躍  
-遅くして/slowness → 鈍化  
-泳ぎ速く/水中移動 → 水中移動  
+- 足速くして/走りたい/speed/俊敏 → 俊敏
+- 高く飛びたい/ジャンプ力up/jump boost → 跳躍
+- 遅くして/のろま/slowness → 鈍化
+- 泳ぎ速く/水中移動 → 水中移動
 
-■エフェクト（戦闘）
-強くなりたい/攻撃力up/strength → 力  
-硬くなりたい/resistance → 耐性  
-再生/回復/regeneration → 再生  
-透明になりたい/invisible → 透明化  
-暗闇で見える/光りたい/night vision → 暗視  
+■エフェクト（戦闘関連）
+- 強くなりたい/攻撃力up/strength/筋力 → 力
+- 硬くなりたい/防御/resistance/耐性 → 耐性
+- 再生/回復/regeneration/体力戻して → 再生
+- 透明になりたい/invisible/見えなく → 透明化
+- 光りたい/暗視/night vision/夜見える → 暗視
 
 ■エフェクト（その他）
-水中呼吸/溺れない → 水中呼吸  
-落下ダメージなし/軽やか → 低速落下  
-火に強い/fire resistance/燃えない → 火炎耐性  
-毒/poison → 毒  
-弱体化/weakness → 弱体化  
+- 水中呼吸/溺れない/water breathing → 水中呼吸
+- 落下ダメージなし/軽やか → 低速落下
+- 火耐性/fire resistance/燃えない/耐火 → 火炎耐性
+- 毒/poison → 毒
+- 弱体化/weakness/弱く → 弱体化
 
-■素材（アイテムの前に付く）
-木/wooden → 木  
-石/stone → 石  
-鉄/iron → 鉄  
-金/golden/gold → 金  
-ダイヤ/diamond/dia → ダイヤモンド  
-ネザライト/netherite → ネザライト  
-────────────────────────
+■素材の種類
+- 木/wooden/wood → 木
+- 石/stone → 石
+- 鉄/iron/アイアン → 鉄
+- 金/golden/gold/ゴールド → 金
+- ダイヤ/ダイア/diamond/dia → ダイヤモンド
+- ネザライト/netherite → ネザライト
 
-【アイテム構造の変換】
-・「素材 + アイテム」は必ず「[素材]の[アイテム]」へ統一  
-　例：鉄の剣 / ダイヤモンドのピッケル など  
-・防具一式は4つに展開し、それぞれ数量をつける  
-　例：「防具一式ください」 →  
-　　「自分にヘルメットを1個与える、  
-　　　自分にチェストプレートを1個与える、  
-　　　自分にレギンスを1個与える、  
-　　　自分にブーツを1個与える」  
-────────────────────────
+【変換ルール】
+1. 対象を特定し、必ず出力に含める
+2. 「〜に」「〜へ」で対象を判別
+3. 「やる」「あげる」「渡す」「くれ」「ください」→「与える」
+4. 「〜したい」「〜になりたい」→「〜の効果を付ける」(対象は自分)
+5. 数量を明示的に出力
+6. 素材+アイテムの組み合わせは「[素材]の[アイテム]」
+7. 防具一式は4つのパーツに展開(それぞれに対象と数量を付ける)
+8. 複数要求は「、」で区切る
+9. 対象が明示されていない場合は「自分」とする
 
-【動作ルール】
-1. 必ず「[対象]に」から文を始める  
-2. 「あげる/やる/渡す/くれ」 → 「与える」  
-3. 「〜したい/〜になりたい」 → 効果付与（対象＝自分）  
-4. 複数要求は「、」で区切る  
-5. 否定構文（「いらない」「渡すな」など）は無視して出力しない  
-6. 例外的入力でも必ず構造化された1文にまとめる  
-────────────────────────
-
-【禁止事項】
-・説明文を返さない  
-・文末に余分な文章をつけない  
-・Minecraft に存在しないアイテム名を創作しない  
-────────────────────────
+【注意事項】
+- 必ず「[対象]に」を含める
+- 数量は必ず明示(「〜個」の形式)
+- 対象が複数の場合も「、」で区切って個別に出力
+- プレイヤー名が指定されている場合はそのまま使用
+- 「自分」「他のプレイヤー」「全プレイヤー」「最も近いプレイヤー」のいずれかに統一
+- 正規化された出力のみを返し、説明文は不要
 
 【入力】
 {user_input}
 
-【正規化された出力】
-"""
+【正規化された出力】"""
 
-# AI直接生成プロンプト
+# AI直接生成プロンプト（AI単体版用）
 DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです。ユーザーの自然言語入力から、直接Minecraftコマンドを生成してください。
 
 【重要ルール】
@@ -178,18 +141,32 @@ DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです
 - [プレイヤー名] : 特定のプレイヤー
 
 【主要コマンド形式】
-内容	エディション	コマンド構文
-1.時間を変更する	統合版	/time set 時間
-2.天候を変える	統合版	/weather 天候
-3.ゲームモードを変更する	統合版	/gamemode ゲームモード
-4.テレポートする	統合版	/tp 座標x y z
-5.スポーン位置をきめる	統合版	/setworldspawn 座標x y z
-6.構造物の座標を調べる	統合版	/locate structure 構造物ID
-7.アイテムを与える	統合版	/give アイテムID
-8.ブロックをしきつめる	統合版	/fill 始点座標x y z 終点座標x y z ブロックID
-9.召喚する	統合版	/summon エンティティID
-10.アイテムを消す	統合版	/clear @s アイテムID
-11.モブを消す	統合版	/kill @e[type=モブID]
+■アイテム付与
+/give [対象] [アイテムID] [数量]
+例: /give @s diamond 1
+例: /give @s iron_pickaxe 1
+
+■エフェクト付与
+/effect [対象] [効果ID] [秒数] [レベル]
+例: /effect @s speed 60 2
+例: /effect @a regeneration 30 1
+
+■テレポート
+/tp [対象] [x] [y] [z]
+/tp [対象] ~ ~10 ~
+
+■ゲームモード変更
+/gamemode creative
+/gamemode survival
+
+■天気変更
+/weather clear
+/weather rain
+/weather thunder
+
+■時間変更
+/time set day
+/time set night
 
 【アイテムID例】
 - ダイヤモンド: diamond
@@ -220,186 +197,44 @@ DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです
 - 明示的な数値があればその数値
 - 省略時 → 1
 
+【エディション】
+現在のエディション: {edition}
+※統合版の場合は統合版のコマンド形式を、Java版の場合はJava版の形式を使用
+
 【入力】
 {user_input}
 
 【生成されたコマンド】"""
 
-# ========== 研究用データ記録関数（拡張版） ==========
-def log_research_data(
-    user_input,
-    normalized_text,
-    hybrid_commands,
-    ai_direct_commands,
-    edition,
-    hybrid_time=None,
-    ai_time=None,
-    hybrid_error=None,
-    ai_error=None,
-    used_model=None,
-    user_rating=None,
-    preferred_version=None,
-    user_comment=None
-):
+# ========== 利用可能なモデルをチェック ==========
+async def check_available_models():
     """
-    研究用の詳細なデータをGoogle Sheetsに記録
-    """
-    if not st.session_state.enable_logging:
-        return False
-    
-    try:
-        # Google Sheets認証情報を取得
-        if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
-            credentials_dict = dict(st.secrets["gcp_service_account"])
-        else:
-            st.warning("⚠️ Google Sheets認証情報が設定されていません")
-            return False
-        
-        # 認証
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
-        client = gspread.authorize(credentials)
-        
-        # スプレッドシートを開く
-        spreadsheet_url = st.secrets.get("SPREADSHEET_URL", None)
-        if spreadsheet_url:
-            spreadsheet = client.open_by_url(spreadsheet_url)
-        else:
-            spreadsheet = client.open("Minecraft Command Generation Log")
-        
-        worksheet = spreadsheet.sheet1
-        
-        # タイムスタンプ
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # データ行を作成（研究用に拡張）
-        row_data = [
-            timestamp,                                      # A: タイムスタンプ
-            st.session_state.session_id,                    # B: セッションID
-            user_input,                                     # C: ユーザー入力
-            normalized_text or "",                          # D: AI正規化結果
-            hybrid_commands or "",                          # E: ハイブリッドコマンド
-            ai_direct_commands or "",                       # F: AI単体コマンド
-            edition,                                        # G: エディション
-            f"{hybrid_time:.2f}" if hybrid_time else "",    # H: ハイブリッド処理時間
-            f"{ai_time:.2f}" if ai_time else "",            # I: AI単体処理時間
-            hybrid_error or "",                             # J: ハイブリッドエラー
-            ai_error or "",                                 # K: AI単体エラー
-            used_model or "",                               # L: 使用モデル
-            str(user_rating) if user_rating else "",        # M: ユーザー評価（1-5）
-            preferred_version or "",                        # N: 好みの版
-            user_comment or ""                              # O: コメント
-        ]
-        
-        worksheet.append_row(row_data)
-        return True
-        
-    except Exception as e:
-        st.error(f"Google Sheets記録エラー: {e}")
-        return False
-
-# ========== ローカルログ記録（フォールバック） ==========
-def log_to_local(
-    user_input,
-    normalized_text,
-    hybrid_commands,
-    ai_direct_commands,
-    edition,
-    hybrid_time=None,
-    ai_time=None,
-    hybrid_error=None,
-    ai_error=None,
-    used_model=None
-):
-    """
-    ローカルファイルに記録（Google Sheets利用不可の場合）
-    """
-    try:
-        log_data = {
-            "timestamp": datetime.now().isoformat(),
-            "session_id": st.session_state.session_id,
-            "user_input": user_input,
-            "normalized_text": normalized_text,
-            "hybrid_commands": hybrid_commands,
-            "ai_direct_commands": ai_direct_commands,
-            "edition": edition,
-            "hybrid_time": hybrid_time,
-            "ai_time": ai_time,
-            "hybrid_error": hybrid_error,
-            "ai_error": ai_error,
-            "used_model": used_model
-        }
-        
-        # セッション状態にログを保存
-        if 'local_logs' not in st.session_state:
-            st.session_state.local_logs = []
-        
-        st.session_state.local_logs.append(log_data)
-        
-        # 最新100件のみ保持
-        if len(st.session_state.local_logs) > 100:
-            st.session_state.local_logs = st.session_state.local_logs[-100:]
-        
-        return True
-    except Exception as e:
-        st.error(f"ローカルログエラー: {e}")
-        return False
-
-# ========== AI正規化関数 ==========
-async def normalize_with_gemini(user_input):
-    """
-    Gemini APIを使ってユーザー入力を正規化
+    利用可能なGeminiモデルを確認
     """
     if not GEMINI_API_KEY:
-        return None, None
+        return []
     
     import aiohttp
     
-    # 複数のエンドポイントを試す
-    for endpoint in GEMINI_ENDPOINTS:
-        try:
-            prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
-            
-            headers = {"Content-Type": "application/json"}
-            
-            data = {
-                "contents": [{
-                    "parts": [{"text": prompt}]
-                }],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "maxOutputTokens": 500,
-                }
-            }
-            
-            url = f"{endpoint}?key={GEMINI_API_KEY}"
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                    
-                    if response.status == 200:
-                        result = await response.json()
-                        
-                        # テキスト抽出
-                        candidates = result.get("candidates", [])
-                        if candidates and len(candidates) > 0:
-                            content = candidates[0].get("content", {})
-                            parts = content.get("parts", [])
-                            if parts and len(parts) > 0:
-                                normalized_text = parts[0].get("text", "").strip()
-                                model_name = endpoint.split('models/')[1].split(':')[0]
-                                return normalized_text, model_name
-                        
-                        return None, None
-                    elif response.status == 429:
-                        continue
-                    else:
-                        continue
-                        
-        except Exception as e:
-            continue
-    
-    return None, None
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={GEMINI_API_KEY}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    models = result.get("models", [])
+                    # generateContentをサポートするモデルのみ
+                    available = [
+                        m["name"] for m in models 
+                        if "generateContent" in m.get("supportedGenerationMethods", [])
+                    ]
+                    return available
+                else:
+                    return []
+    except Exception as e:
+        st.error(f"モデルチェックエラー: {e}")
+        return []
 
 # ========== AI直接生成関数 ==========
 async def generate_command_directly(user_input, edition):
@@ -407,20 +242,26 @@ async def generate_command_directly(user_input, edition):
     AI単体でコマンドを直接生成
     """
     if not GEMINI_API_KEY:
-        return None, None
+        return None
     
     import aiohttp
+    
+    error_messages = []
     
     # 複数のエンドポイントを試す
     for endpoint in GEMINI_ENDPOINTS:
         try:
             prompt = DIRECT_GENERATION_PROMPT.replace("{user_input}", user_input).replace("{edition}", edition)
             
-            headers = {"Content-Type": "application/json"}
+            headers = {
+                "Content-Type": "application/json",
+            }
             
             data = {
                 "contents": [{
-                    "parts": [{"text": prompt}]
+                    "parts": [{
+                        "text": prompt
+                    }]
                 }],
                 "generationConfig": {
                     "temperature": 0.2,
@@ -443,24 +284,126 @@ async def generate_command_directly(user_input, edition):
                             parts = content.get("parts", [])
                             if parts and len(parts) > 0:
                                 generated_commands = parts[0].get("text", "").strip()
-                                model_name = endpoint.split('models/')[1].split(':')[0]
-                                return generated_commands, model_name
+                                return generated_commands
                         
-                        return None, None
-                    elif response.status == 429:
-                        continue
+                        return None
                     else:
                         continue
                         
         except Exception as e:
             continue
     
-    return None, None
+    return None
 
-# ========== データ読み込み ==========
+# ========== Gemini API呼び出し関数（正規化用） ==========
+async def normalize_with_gemini(user_input):
+    """
+    Gemini APIを使ってユーザー入力を正規化
+    """
+    if not GEMINI_API_KEY:
+        return None
+    
+    import aiohttp
+    
+    error_messages = []
+    
+    # 複数のエンドポイントを試す
+    for endpoint in GEMINI_ENDPOINTS:
+        try:
+            prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
+            
+            headers = {
+                "Content-Type": "application/json",
+            }
+            
+            data = {
+                "contents": [{
+                    "parts": [{
+                        "text": prompt
+                    }]
+                }],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 500,
+                }
+            }
+            
+            url = f"{endpoint}?key={GEMINI_API_KEY}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    response_text = await response.text()
+                    
+                    if response.status == 200:
+                        result = await response.json()
+                        
+                        # テキスト抽出
+                        candidates = result.get("candidates", [])
+                        if candidates and len(candidates) > 0:
+                            content = candidates[0].get("content", {})
+                            parts = content.get("parts", [])
+                            if parts and len(parts) > 0:
+                                normalized_text = parts[0].get("text", "").strip()
+                                st.success(f"✅ 使用モデル: {endpoint.split('models/')[1].split(':')[0]}")
+                                return normalized_text
+                        
+                        return None
+                    else:
+                        model_name = endpoint.split('models/')[1].split(':')[0]
+                        error_messages.append(f"**{model_name}**: Status {response.status}\n```\n{response_text}\n```")
+                        continue
+                        
+        except Exception as e:
+            model_name = endpoint.split('models/')[1].split(':')[0]
+            error_messages.append(f"**{model_name}**: {str(e)}")
+            continue
+    
+    # すべて失敗した場合 - 詳細なエラー情報を表示
+    st.error("❌ すべてのモデルで失敗しました")
+    
+    with st.expander("🔍 詳細なエラー情報", expanded=True):
+        st.markdown("### 各モデルのエラー:")
+        for error_msg in error_messages:
+            st.markdown(error_msg)
+        
+        st.markdown("---")
+        st.markdown("### APIキー確認:")
+        if GEMINI_API_KEY:
+            # APIキーの最初と最後の数文字のみ表示
+            masked_key = f"{GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}"
+            st.code(masked_key)
+            st.markdown(f"**キー長:** {len(GEMINI_API_KEY)} 文字")
+            st.markdown(f"**先頭:** {GEMINI_API_KEY[:7]}")
+        
+        st.markdown("---")
+        st.markdown("### トラブルシューティング:")
+        st.markdown("""
+        1. **APIキーの確認**
+           - `AIzaSy` で始まっているか
+           - 余計なスペースや改行がないか
+           - 引用符（`"` や `'`）が含まれていないか
+        
+        2. **新しいAPIキーを作成**
+           - [Google AI Studio](https://aistudio.google.com/app/apikey)
+           - 既存のキーではなく、新規作成を推奨
+        
+        3. **Streamlit Secretsの形式**
+           ```toml
+           GEMINI_API_KEY = "AIzaSy..."
+           ```
+           ※引用符も含めて正確に
+        
+        4. **APIの有効化**
+           - Google Cloud ConsoleでGenerative Language APIが有効か確認
+        """)
+    
+    return None
+
+# 現在のディレクトリとファイル一覧を確認
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 files_in_dir = os.listdir(current_dir)
 
+# データ読み込み
 ITEMS = {}
 ITEM_CATEGORIES = []
 COMMANDS = []
@@ -482,8 +425,13 @@ try:
         item_data = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(item_data)
         
+        # items辞書を読み込む（小文字のitemsに対応）
         items_dict = getattr(item_data, 'items', None) or getattr(item_data, 'ITEMS', {})
+        
+        # 辞書形式をそのまま使用
         ITEMS = items_dict
+        
+        # カテゴリ情報の取得
         ITEM_CATEGORIES = getattr(item_data, 'categories', None) or getattr(item_data, 'CATEGORIES', [])
         
         if not ITEM_CATEGORIES and ITEMS:
@@ -498,7 +446,7 @@ try:
 except Exception as e:
     load_status['items_error'] = str(e)
 
-# command_data.py の読み込み
+# command_data.py の読み込み（辞書形式に対応）
 try:
     command_data_path = os.path.join(current_dir, 'command_data.py')
     
@@ -507,9 +455,11 @@ try:
         command_data = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(command_data)
         
+        # commands辞書を読み込んで、リスト形式に変換
         commands_dict = getattr(command_data, 'commands', None) or getattr(command_data, 'COMMANDS', [])
         
         if isinstance(commands_dict, dict):
+            # 辞書形式を内部用のリスト形式に変換
             COMMANDS = []
             for cmd_key, cmd_data in commands_dict.items():
                 command_entry = {
@@ -525,6 +475,9 @@ try:
         elif isinstance(commands_dict, list):
             COMMANDS = commands_dict
         
+        # template_requires_item関数も読み込む
+        template_requires_item = getattr(command_data, 'template_requires_item', None)
+        
         COMMAND_CATEGORIES = list(set([cmd.get('category', 'その他') for cmd in COMMANDS]))
         COMMAND_CATEGORIES.sort()
         
@@ -536,79 +489,7 @@ try:
 except Exception as e:
     load_status['commands_error'] = str(e)
 
-# ========== コマンド検索関数 ==========
-def search_commands(query, edition):
-    """
-    ユーザーの入力からコマンドを検索
-    """
-    if not COMMANDS:
-        return []
-    
-    results = []
-    query_lower = query.lower()
-    
-    for cmd in COMMANDS:
-        keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
-        if any(keyword.lower() in query_lower for keyword in keywords):
-            cmd_copy = cmd.copy()
-            
-            template = cmd_copy.get('template', {})
-            
-            if isinstance(template, dict):
-                cmd_template = template.get(edition, '')
-                if isinstance(cmd_template, list):
-                    cmd_template = cmd_template[0] if cmd_template else ''
-            else:
-                cmd_template = template
-            
-            if '{item_id}' in str(cmd_template):
-                if ITEMS:
-                    matched_item = None
-                    
-                    for item_key, item_data in ITEMS.items():
-                        item_name = item_data.get('name', '').lower()
-                        if item_name in query_lower:
-                            matched_item = item_data
-                            break
-                    
-                    if not matched_item:
-                        for item_key, item_data in ITEMS.items():
-                            aliases = item_data.get('aliases', [])
-                            for alias in aliases:
-                                if alias.lower() in query_lower:
-                                    matched_item = item_data
-                                    break
-                            if matched_item:
-                                break
-                    
-                    if not matched_item:
-                        matched_item = list(ITEMS.values())[0]
-                    
-                    item_id_data = matched_item.get('id', {})
-                    if isinstance(item_id_data, dict):
-                        item_id = item_id_data.get(edition, '')
-                    else:
-                        item_id = item_id_data
-                    
-                    cmd_copy['cmd'] = cmd_template.replace('{item_id}', item_id)
-                    cmd_copy['item_name'] = matched_item.get('name', '')
-                    cmd_copy['matched_item_key'] = item_key
-                    
-                    desc = cmd_copy.get('desc', '')
-                    if '{item}' in desc:
-                        cmd_copy['desc'] = desc.replace('{item}', matched_item.get('name', ''))
-                else:
-                    cmd_copy['cmd'] = cmd_template
-            else:
-                cmd_copy['cmd'] = cmd_template
-            
-            cmd_copy['cmd_template'] = cmd_template
-            
-            results.append(cmd_copy)
-    
-    return results
-
-# ========== ページ設定 ==========
+# ページ設定
 st.set_page_config(
     page_title="Minecraftコマンド生成ツール",
     page_icon="⛏️",
@@ -618,6 +499,7 @@ st.set_page_config(
 # CSSスタイル
 st.markdown("""
 <style>
+/* ====== サイドバー固定 ====== */
 [data-testid="stSidebar"] {
     position: fixed !important;
     top: 0;
@@ -645,6 +527,17 @@ st.markdown("""
     margin: 0 !important;
 }
 
+[data-testid="stSidebar"] * {
+    cursor: default !important;
+}
+
+[data-testid="stSidebar"] button,
+[data-testid="stSidebar"] a,
+[data-testid="stSidebar"] input[type="radio"] {
+    cursor: pointer !important;
+}
+
+/* ====== メインエリア ====== */
 .main {
     margin-left: 280px !important;
 }
@@ -654,12 +547,36 @@ st.markdown("""
     padding-top: 2rem !important;
 }
 
+/* ====== 見出しのアンカーリンク非表示 ====== */
+h1::before, h2::before, h3::before, h4::before {
+    content: none !important;
+    display: none !important;
+}
+
+h1 a, h2 a, h3 a, h4 a {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+[data-testid="stHeaderActionElements"] {
+    display: none !important;
+}
+
+/* ====== アニメーション無効化 ====== */
+* {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+    transition-duration: 0s !important;
+}
+
+/* ====== ボタンスタイル ====== */
 .stButton button {
     width: 100%;
     border-radius: 8px;
     font-weight: 500;
 }
 
+/* ====== スマホ対応 ====== */
 @media (max-width: 900px) {
     [data-testid="stSidebar"] {
         position: relative !important;
@@ -678,7 +595,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ========== セッション状態の初期化 ==========
+# セッション状態の初期化
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
 if 'edition' not in st.session_state:
@@ -687,16 +604,148 @@ if 'selected_command' not in st.session_state:
     st.session_state.selected_command = None
 if 'user_input' not in st.session_state:
     st.session_state.user_input = ''
+if 'use_ai_normalization' not in st.session_state:
+    st.session_state.use_ai_normalization = True
+if 'normalized_text' not in st.session_state:
+    st.session_state.normalized_text = ''
 if 'generation_mode' not in st.session_state:
-    st.session_state.generation_mode = 'both'
-if 'enable_logging' not in st.session_state:
-    st.session_state.enable_logging = True
-if 'session_id' not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
-if 'last_generation_id' not in st.session_state:
-    st.session_state.last_generation_id = None
+    st.session_state.generation_mode = 'both'  # 'hybrid', 'ai_only', or 'both'
+
+# ========== コマンド検索関数 ==========
+def search_commands(query, edition):
+    """
+    ユーザーの入力からコマンドを検索
+    
+    Args:
+        query (str): 検索キーワード
+        edition (str): Minecraftエディション（統合版/Java版）
+    
+    Returns:
+        list: マッチしたコマンドのリスト
+    """
+    if not COMMANDS:
+        return []
+    
+    results = []
+    query_lower = query.lower()
+    
+    for cmd in COMMANDS:
+        # キーワードマッチング（aliases/keywordsの両方に対応）
+        keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
+        if any(keyword.lower() in query_lower for keyword in keywords):
+            cmd_copy = cmd.copy()
+            
+            # テンプレートの取得
+            template = cmd_copy.get('template', {})
+            
+            # エディション別のテンプレートを取得
+            if isinstance(template, dict):
+                cmd_template = template.get(edition, '')
+                # リスト形式の場合は最初の要素を使用
+                if isinstance(cmd_template, list):
+                    cmd_template = cmd_template[0] if cmd_template else ''
+            else:
+                cmd_template = template
+            
+            # アイテムIDの置換が必要な場合
+            if '{item_id}' in str(cmd_template):
+                if ITEMS:
+                    # クエリからアイテムを検索
+                    matched_item = None
+                    
+                    # 1. アイテム名での完全一致検索
+                    for item_key, item_data in ITEMS.items():
+                        item_name = item_data.get('name', '').lower()
+                        if item_name in query_lower:
+                            matched_item = item_data
+                            break
+                    
+                    # 2. エイリアスでの検索
+                    if not matched_item:
+                        for item_key, item_data in ITEMS.items():
+                            aliases = item_data.get('aliases', [])
+                            for alias in aliases:
+                                if alias.lower() in query_lower:
+                                    matched_item = item_data
+                                    break
+                            if matched_item:
+                                break
+                    
+                    # 3. マッチしない場合はデフォルト（最初のアイテム）
+                    if not matched_item:
+                        matched_item = list(ITEMS.values())[0]
+                    
+                    # アイテムIDの取得
+                    item_id_data = matched_item.get('id', {})
+                    if isinstance(item_id_data, dict):
+                        item_id = item_id_data.get(edition, '')
+                    else:
+                        item_id = item_id_data
+                    
+                    cmd_copy['cmd'] = cmd_template.replace('{item_id}', item_id)
+                    cmd_copy['item_name'] = matched_item.get('name', '')
+                    cmd_copy['matched_item_key'] = item_key
+                    
+                    # 説明文のアイテム名も置換
+                    desc = cmd_copy.get('desc', '')
+                    if '{item}' in desc:
+                        cmd_copy['desc'] = desc.replace('{item}', matched_item.get('name', ''))
+                else:
+                    cmd_copy['cmd'] = cmd_template
+            else:
+                cmd_copy['cmd'] = cmd_template
+            
+            # cmd_templateを保持（後でアイテム変更に使用）
+            cmd_copy['cmd_template'] = cmd_template
+            
+            results.append(cmd_copy)
+    
+    return results
+
+# ========== アイテム検索関数 ==========
+def search_items(query, category=None):
+    """
+    アイテムを検索
+    
+    Args:
+        query (str): 検索キーワード
+        category (str): カテゴリフィルター
+    
+    Returns:
+        dict: マッチしたアイテムの辞書
+    """
+    if not ITEMS:
+        return {}
+    
+    filtered = ITEMS
+    
+    # キーワード検索（名前とaliasesの両方を検索）
+    if query:
+        query_lower = query.lower()
+        filtered = {}
+        for k, v in ITEMS.items():
+            # 名前での検索
+            if query_lower in v.get('name', '').lower():
+                filtered[k] = v
+                continue
+            # aliasesでの検索
+            aliases = v.get('aliases', [])
+            if any(query_lower in alias.lower() for alias in aliases):
+                filtered[k] = v
+                continue
+    
+    # カテゴリフィルター
+    if category and category != "全て":
+        filtered = {
+            k: v for k, v in filtered.items()
+            if v.get('category') == category
+        }
+    
+    return filtered
 
 # ========== メイン画面 ==========
+
+# タイトル
 st.title("⛏️ Minecraftコマンド生成ツール")
 st.markdown("---")
 
@@ -720,6 +769,7 @@ st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")
 if menu == "🏠 ホーム":
     st.header("🏠 ホームメニュー")
     
+    # データ読み込み状況を表示
     if load_status['items'] and load_status['commands']:
         st.success(f"✅ データ読み込み成功！")
         col_info1, col_info2 = st.columns(2)
@@ -729,6 +779,26 @@ if menu == "🏠 ホーム":
             st.metric("コマンド数", f"{len(COMMANDS)}個")
     else:
         st.error("⚠️ データファイルの読み込みに問題があります")
+        
+        if not load_status['items']:
+            st.warning(f"❌ item_data.py: {load_status['items_error']}")
+        else:
+            st.success(f"✅ item_data.py: {len(ITEMS)}個読み込み成功")
+            
+        if not load_status['commands']:
+            st.warning(f"❌ command_data.py: {load_status['commands_error']}")
+        else:
+            st.success(f"✅ command_data.py: {len(COMMANDS)}個読み込み成功")
+    
+    # デバッグ情報を表示
+    with st.expander("🔍 デバッグ情報（開発者向け）", expanded=False):
+        st.markdown("**現在のディレクトリ:**")
+        st.code(current_dir)
+        st.markdown("**ディレクトリ内のファイル:**")
+        st.code("\n".join(sorted(files_in_dir)))
+        st.markdown("**データファイルの存在確認:**")
+        st.code(f"item_data.py: {os.path.exists(os.path.join(current_dir, 'item_data.py'))}")
+        st.code(f"command_data.py: {os.path.exists(os.path.join(current_dir, 'command_data.py'))}")
     
     st.markdown("---")
     
@@ -753,21 +823,21 @@ if menu == "🏠 ホーム":
         """)
     
     st.markdown("---")
-    st.markdown("### 📊 研究データ収集について")
     
-    if st.session_state.enable_logging:
-        st.info("✅ **データ記録: 有効** - あなたの入力と生成結果が研究用に記録されます")
-        st.markdown("""
-        **記録される情報:**
-        - 入力文と生成されたコマンド
-        - 処理時間とエラー情報
-        - 使用したAIモデル
-        - ユーザー評価（任意）
-        
-        このデータは機械学習モデルの改善に使用されます。
-        """)
+    # データ読み込み状況
+    if ITEMS and COMMANDS:
+        st.success(f"✅ すべてのデータが正常に読み込まれています")
+        col_stat1, col_stat2 = st.columns(2)
+        with col_stat1:
+            st.info(f"📦 アイテム: {len(ITEMS)}個")
+        with col_stat2:
+            st.info(f"📋 コマンド: {len(COMMANDS)}個")
     else:
-        st.warning("⚠️ **データ記録: 無効** - 設定ページで有効にできます")
+        st.warning("⚠️ 一部のデータが読み込まれていません")
+        if not ITEMS:
+            st.error(f"❌ item_data.py: {load_status.get('items_error', '不明なエラー')}")
+        if not COMMANDS:
+            st.error(f"❌ command_data.py: {load_status.get('commands_error', '不明なエラー')}")
 
 # ========== コマンド生成画面 ==========
 elif menu == "🛠 コマンド生成":
@@ -822,7 +892,7 @@ elif menu == "🛠 コマンド生成":
     st.markdown("---")
     
     # API キーの確認
-    if not GEMINI_API_KEY:
+    if not GEMINI_API_KEY and st.session_state.generation_mode != 'hybrid':
         st.error("❌ Gemini APIキーが設定されていません。AI機能を使用するには設定が必要です。")
         st.stop()
     
@@ -842,20 +912,6 @@ elif menu == "🛠 コマンド生成":
     if generate_btn and user_input:
         st.session_state.user_input = user_input
         
-        # 生成IDを作成
-        generation_id = str(uuid.uuid4())
-        st.session_state.last_generation_id = generation_id
-        
-        # データ記録用の変数
-        normalized_text_log = ""
-        hybrid_commands_log = ""
-        ai_direct_commands_log = ""
-        hybrid_time_log = None
-        ai_time_log = None
-        hybrid_error_log = None
-        ai_error_log = None
-        used_model_log = None
-        
         # ========== 両方比較モード ==========
         if st.session_state.generation_mode == 'both':
             st.markdown("---")
@@ -872,30 +928,20 @@ elif menu == "🛠 コマンド生成":
                     import asyncio
                     
                     # AI正規化
-                    hybrid_start = time.time()
-                    try:
-                        normalized, model_name = asyncio.run(normalize_with_gemini(user_input))
+                    if GEMINI_API_KEY:
+                        normalized = asyncio.run(normalize_with_gemini(user_input))
                         if normalized:
                             st.success("✅ 正規化完了")
                             st.info(f"**理解:** {normalized}")
                             search_text = normalized
-                            normalized_text_log = normalized
-                            used_model_log = model_name
                         else:
                             st.warning("⚠️ 正規化失敗")
                             search_text = user_input
-                            hybrid_error_log = "正規化失敗"
-                    except Exception as e:
-                        st.error(f"エラー: {e}")
+                    else:
                         search_text = user_input
-                        hybrid_error_log = str(e)
                     
                     # コマンド検索
                     candidates = search_commands(search_text, st.session_state.edition)
-                    hybrid_time_log = time.time() - hybrid_start
-                    
-                    # ハイブリッドコマンドを記録
-                    hybrid_commands_list = []
                     
                     if candidates:
                         for i, cmd in enumerate(candidates):
@@ -907,23 +953,45 @@ elif menu == "🛠 コマンド生成":
                             else:
                                 title = f"{cmd_name}"
                             
-                            command_text = cmd.get('cmd', '')
-                            hybrid_commands_list.append(command_text)
-                            
                             with st.container(border=True):
                                 st.markdown(f"**{title}**")
-                                st.code(command_text, language='bash')
+                                st.code(cmd.get('cmd', ''), language='bash')
+                                
+                                # アイテム選択
+                                if '{item_id}' in cmd.get('cmd_template', '') and ITEMS:
+                                    current_item_key = cmd.get('matched_item_key', list(ITEMS.keys())[0])
+                                    item_names = [item.get('name', k) for k, item in ITEMS.items()]
+                                    current_item_name = ITEMS.get(current_item_key, {}).get('name', item_names[0])
+                                    
+                                    try:
+                                        default_index = item_names.index(current_item_name)
+                                    except ValueError:
+                                        default_index = 0
+                                    
+                                    selected_item = st.selectbox(
+                                        "アイテム変更",
+                                        options=item_names,
+                                        index=default_index,
+                                        key=f"hybrid_item_{i}",
+                                    )
+                                    
+                                    for item_key, item in ITEMS.items():
+                                        if item.get('name', item_key) == selected_item:
+                                            item_id_data = item.get('id', {})
+                                            if isinstance(item_id_data, dict):
+                                                item_id = item_id_data.get(st.session_state.edition, item_key)
+                                            else:
+                                                item_id = item_id_data
+                                            updated_cmd = cmd['cmd_template'].replace('{item_id}', item_id)
+                                            st.code(updated_cmd, language='bash')
+                                            break
                                 
                                 with st.expander("詳細"):
                                     st.markdown(f"**解説:** {cmd.get('desc', '')}")
                                     if 'note' in cmd and cmd['note']:
                                         st.markdown(f"**補足:** {cmd['note']}")
-                        
-                        hybrid_commands_log = " | ".join(hybrid_commands_list)
-                        st.success(f"⏱️ 処理時間: {hybrid_time_log:.2f}秒")
                     else:
                         st.warning("⚠️ コマンドが見つかりませんでした")
-                        hybrid_error_log = "コマンド未検出"
             
             # 右側: AI単体版
             with col_result2:
@@ -932,147 +1000,25 @@ elif menu == "🛠 コマンド生成":
                 
                 with st.spinner("AIが生成中..."):
                     import asyncio
+                    generated_commands = asyncio.run(generate_command_directly(user_input, st.session_state.edition))
                     
-                    ai_start = time.time()
-                    try:
-                        generated_commands, model_name = asyncio.run(generate_command_directly(user_input, st.session_state.edition))
-                        ai_time_log = time.time() - ai_start
+                    if generated_commands:
+                        st.success("✅ 生成完了")
                         
-                        if generated_commands:
-                            st.success("✅ 生成完了")
-                            
-                            commands_list = [cmd.strip() for cmd in generated_commands.split('\n') if cmd.strip()]
-                            ai_direct_commands_log = " | ".join(commands_list)
-                            
-                            if not used_model_log:
-                                used_model_log = model_name
-                            
-                            for i, cmd in enumerate(commands_list):
-                                with st.container(border=True):
-                                    st.markdown(f"**コマンド {i+1}**")
-                                    st.code(cmd, language='bash')
-                            
-                            st.success(f"⏱️ 処理時間: {ai_time_log:.2f}秒")
-                        else:
-                            st.error("❌ 生成失敗")
-                            ai_error_log = "生成失敗"
-                    except Exception as e:
-                        st.error(f"エラー: {e}")
-                        ai_time_log = time.time() - ai_start
-                        ai_error_log = str(e)
-            
-            # Google Sheetsに記録
-            if st.session_state.enable_logging:
-                with st.spinner("📝 データを記録中..."):
-                    if GSPREAD_AVAILABLE:
-                        success = log_research_data(
-                            user_input,
-                            normalized_text_log,
-                            hybrid_commands_log,
-                            ai_direct_commands_log,
-                            st.session_state.edition,
-                            hybrid_time=hybrid_time_log,
-                            ai_time=ai_time_log,
-                            hybrid_error=hybrid_error_log,
-                            ai_error=ai_error_log,
-                            used_model=used_model_log
-                        )
-                        if success:
-                            st.success("✅ Google Sheetsに記録しました")
+                        commands_list = [cmd.strip() for cmd in generated_commands.split('\n') if cmd.strip()]
+                        
+                        for i, cmd in enumerate(commands_list):
+                            with st.container(border=True):
+                                st.markdown(f"**コマンド {i+1}**")
+                                st.code(cmd, language='bash')
+                                
+                                with st.expander("特徴"):
+                                    st.markdown("- 柔軟な解釈")
+                                    st.markdown("- 自動ID変換")
+                                    st.markdown("- 複雑な要求対応")
                     else:
-                        # ローカルログにフォールバック
-                        log_to_local(
-                            user_input,
-                            normalized_text_log,
-                            hybrid_commands_log,
-                            ai_direct_commands_log,
-                            st.session_state.edition,
-                            hybrid_time=hybrid_time_log,
-                            ai_time=ai_time_log,
-                            hybrid_error=hybrid_error_log,
-                            ai_error=ai_error_log,
-                            used_model=used_model_log
-                        )
-                        st.info("📝 ローカルログに記録しました（Google Sheets未設定）")
+                        st.error("❌ 生成失敗")
             
-            # ユーザーフィードバックUI
-            st.markdown("---")
-            st.markdown("### 📝 この結果を評価してください（任意）")
-            
-            # フィードバック送信フラグをセッション状態で管理
-            feedback_key = f"feedback_sent_{generation_id}"
-            if feedback_key not in st.session_state:
-                st.session_state[feedback_key] = False
-            
-            if not st.session_state[feedback_key]:
-                # フォームを使用してリロードを防ぐ
-                with st.form(key=f"feedback_form_{generation_id}"):
-                    col_fb1, col_fb2, col_fb3 = st.columns([2, 2, 3])
-                    
-                    with col_fb1:
-                        user_rating = st.select_slider(
-                            "総合評価",
-                            options=[1, 2, 3, 4, 5],
-                            value=3,
-                            help="1: 悪い 〜 5: 良い"
-                        )
-                    
-                    with col_fb2:
-                        preferred_version = st.radio(
-                            "どちらが良かったですか？",
-                            ["ハイブリッド版", "AI単体版", "どちらも同じ"],
-                            horizontal=True
-                        )
-                    
-                    with col_fb3:
-                        user_comment = st.text_input(
-                            "コメント（任意）",
-                            placeholder="改善点や感想など..."
-                        )
-                    
-                    submit_feedback = st.form_submit_button("📤 フィードバックを送信", use_container_width=True)
-                    
-                    if submit_feedback:
-                        if GSPREAD_AVAILABLE:
-                            # 最新行を更新する処理
-                            try:
-                                credentials_dict = dict(st.secrets["gcp_service_account"])
-                                scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-                                credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
-                                client = gspread.authorize(credentials)
-                                
-                                spreadsheet_url = st.secrets.get("SPREADSHEET_URL", None)
-                                if spreadsheet_url:
-                                    spreadsheet = client.open_by_url(spreadsheet_url)
-                                else:
-                                    spreadsheet = client.open("Minecraft Command Generation Log")
-                                
-                                worksheet = spreadsheet.sheet1
-                                
-                                # 最新行を検索（セッションIDとタイムスタンプで照合）
-                                all_values = worksheet.get_all_values()
-                                
-                                # 最後の行を更新
-                                last_row_num = len(all_values)
-                                
-                                if last_row_num > 1:  # ヘッダー行以外が存在する場合
-                                    # M, N, O列（評価、好みの版、コメント）を更新
-                                    worksheet.update_cell(last_row_num, 13, str(user_rating))  # M列
-                                    worksheet.update_cell(last_row_num, 14, preferred_version)  # N列
-                                    worksheet.update_cell(last_row_num, 15, user_comment)      # O列
-                                    
-                                    st.success("✅ フィードバックを送信しました！ありがとうございます")
-                                    st.session_state[feedback_key] = True
-                                    st.rerun()
-                                else:
-                                    st.error("❌ 記録された行が見つかりませんでした")
-                                    
-                            except Exception as e:
-                                st.error(f"フィードバック送信エラー: {e}")
-                        else:
-                            st.warning("⚠️ Google Sheets未設定のため、フィードバックを送信できません")
-            else:
-                st.success("✅ フィードバックは既に送信済みです")
             st.markdown("---")
             st.markdown("### 💡 比較ポイント")
             col_compare1, col_compare2 = st.columns(2)
@@ -1081,6 +1027,7 @@ elif menu == "🛠 コマンド生成":
                 **ハイブリッド版の強み:**
                 - ✅ 高精度なアイテムID
                 - ✅ データベースに基づく確実性
+                - ✅ アイテム選択UI
                 - ✅ 詳細な解説付き
                 """)
             with col_compare2:
@@ -1089,7 +1036,253 @@ elif menu == "🛠 コマンド生成":
                 - ✅ 複雑な要求に対応
                 - ✅ 柔軟な解釈
                 - ✅ データベース不要
+                - ✅ 即座に生成
                 """)
+        
+        # ========== ハイブリッド版のみ ==========
+        elif st.session_state.generation_mode == 'hybrid':
+            use_ai = GEMINI_API_KEY is not None
+            
+            if use_ai:
+                with st.spinner("🤖 AIが入力を理解しています..."):
+                    import asyncio
+                    normalized = asyncio.run(normalize_with_gemini(user_input))
+                    
+                    if normalized:
+                        st.session_state.normalized_text = normalized
+                        st.success("✅ AI正規化完了")
+                        st.info(f"**理解した内容:** {normalized}")
+                        search_text = normalized
+                    else:
+                        st.warning("⚠️ AI正規化に失敗しました。元の入力で検索します。")
+                        search_text = user_input
+            else:
+                search_text = user_input
+            
+            candidates = search_commands(search_text, st.session_state.edition)
+            
+            if candidates:
+                st.success(f"✅ {len(candidates)}件のコマンドが見つかりました")
+                
+                for i, cmd in enumerate(candidates):
+                    cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
+                    item_name = cmd.get('item_name', '')
+                    
+                    if item_name:
+                        expander_title = f"📋 {cmd_name}: {item_name}を与える"
+                    else:
+                        expander_title = f"📋 {cmd_name}: {cmd.get('desc', '')}"
+                    
+                    with st.expander(expander_title, expanded=(i==0)):
+                        st.code(cmd.get('cmd', ''), language='bash')
+                        
+                        if '{item_id}' in cmd.get('cmd_template', '') and ITEMS:
+                            st.markdown("---")
+                            st.markdown("**🔄 アイテムを変更:**")
+                            
+                            current_item_key = cmd.get('matched_item_key', list(ITEMS.keys())[0])
+                            item_names = [item.get('name', k) for k, item in ITEMS.items()]
+                            current_item_name = ITEMS.get(current_item_key, {}).get('name', item_names[0])
+                            
+                            try:
+                                default_index = item_names.index(current_item_name)
+                            except ValueError:
+                                default_index = 0
+                            
+                            selected_item = st.selectbox(
+                                "アイテム選択",
+                                options=item_names,
+                                index=default_index,
+                                key=f"item_select_{i}",
+                                label_visibility="collapsed"
+                            )
+                            
+                            for item_key, item in ITEMS.items():
+                                if item.get('name', item_key) == selected_item:
+                                    item_id_data = item.get('id', {})
+                                    if isinstance(item_id_data, dict):
+                                        item_id = item_id_data.get(st.session_state.edition, item_key)
+                                    else:
+                                        item_id = item_id_data
+                                    updated_cmd = cmd['cmd_template'].replace('{item_id}', item_id)
+                                    st.code(updated_cmd, language='bash')
+                                    break
+                        
+                        st.markdown("---")
+                        st.markdown(f"**📝 解説:** {cmd.get('desc', '')}")
+                        if 'note' in cmd and cmd['note']:
+                            st.markdown(f"**💡 補足:** {cmd['note']}")
+                        if 'category' in cmd:
+                            st.markdown(f"**🏷️ カテゴリ:** {cmd['category']}")
+            else:
+                st.warning("⚠️ 該当するコマンドが見つかりませんでした")
+        
+        # ========== AI単体版のみ ==========
+        else:
+            with st.spinner("🤖 AIがコマンドを生成しています..."):
+                import asyncio
+                generated_commands = asyncio.run(generate_command_directly(user_input, st.session_state.edition))
+                
+                if generated_commands:
+                    st.success("✅ AI単体版でコマンド生成完了")
+                    
+                    commands_list = [cmd.strip() for cmd in generated_commands.split('\n') if cmd.strip()]
+                    
+                    for i, cmd in enumerate(commands_list):
+                        with st.expander(f"📋 生成されたコマンド {i+1}", expanded=True):
+                            st.code(cmd, language='bash')
+                            
+                            st.markdown("---")
+                            st.markdown("**💡 AI単体版の特徴:**")
+                            st.markdown("- 柔軟な解釈が可能")
+                            st.markdown("- 複雑な要求に対応")
+                            st.markdown("- アイテムIDの変換も自動")
+                else:
+                    st.error("❌ コマンド生成に失敗しました")
+
+# ========== アイテム図鑑 ==========
+elif menu == "📘 アイテム図鑑":
+    st.header("📘 アイテム図鑑")
+    
+    if not ITEMS:
+        st.error("❌ アイテムデータが読み込まれていません")
+        st.stop()
+    
+    st.markdown("### アイテム一覧")
+    
+    # カテゴリフィルターと検索
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        search_query = st.text_input(
+            "🔍 アイテムを検索", 
+            placeholder="例: 木、オーク、板材",
+            help="アイテム名やエイリアス（別名）で検索できます"
+        )
+    with col2:
+        selected_category = st.selectbox(
+            "カテゴリ",
+            ["全て"] + ITEM_CATEGORIES,
+            key="item_category"
+        )
+    
+    # アイテム検索
+    filtered_items = search_items(search_query, selected_category)
+    
+    if filtered_items:
+        st.info(f"📦 {len(filtered_items)}個のアイテムが見つかりました")
+        
+        for item_key, item in filtered_items.items():
+            category = item.get('category', 'その他')
+            item_name = item.get('name', item_key)
+            item_desc = item.get('desc', '')
+            
+            # エイリアス（別名）の取得
+            aliases = item.get('aliases', [])
+            alias_display = f"別名: {', '.join(aliases[:5])}" if aliases else ""
+            if len(aliases) > 5:
+                alias_display += f"...他{len(aliases)-5}個"
+            
+            with st.expander(f"📦 {item_name} [{category}]", expanded=False):
+                if item_desc:
+                    st.markdown(f"**説明:** {item_desc}")
+                
+                col1, col2 = st.columns(2)
+                
+                # IDの取得
+                item_id_data = item.get('id', {})
+                
+                with col1:
+                    st.markdown(f"**統合版ID:**")
+                    if isinstance(item_id_data, dict):
+                        bedrock_id = item_id_data.get('統合版', item_key)
+                    else:
+                        bedrock_id = item_id_data
+                    st.code(bedrock_id)
+                    
+                with col2:
+                    st.markdown(f"**Java版ID:**")
+                    if isinstance(item_id_data, dict):
+                        java_id = item_id_data.get('Java版', f'minecraft:{item_key}')
+                    else:
+                        java_id = item_id_data
+                    st.code(java_id)
+                
+                # スタックサイズ
+                stack_size = item.get('stack_size', 64)
+                st.markdown(f"**スタックサイズ:** {stack_size}")
+                
+                # エイリアス表示
+                if aliases:
+                    with st.expander("🏷️ 検索用エイリアス", expanded=False):
+                        st.markdown(", ".join(aliases))
+                
+                # giveコマンドのサンプル
+                st.markdown("**取得コマンド:**")
+                current_id = bedrock_id if st.session_state.edition == '統合版' else java_id
+                
+                col_cmd1, col_cmd2 = st.columns(2)
+                with col_cmd1:
+                    st.markdown("*1個:*")
+                    give_cmd_1 = f"/give @s {current_id} 1"
+                    st.code(give_cmd_1, language='bash')
+                with col_cmd2:
+                    st.markdown(f"*{stack_size}個:*")
+                    give_cmd_stack = f"/give @s {current_id} {stack_size}"
+                    st.code(give_cmd_stack, language='bash')
+    else:
+        st.warning("該当するアイテムが見つかりませんでした")
+
+# ========== コマンド図鑑 ==========
+elif menu == "🧾 コマンド図鑑":
+    st.header("🧾 コマンド図鑑")
+    
+    if not COMMANDS:
+        st.error("❌ コマンドデータが読み込まれていません")
+        st.stop()
+    
+    st.markdown("### よく使うコマンド一覧")
+    
+    # カテゴリフィルター
+    selected_cmd_category = st.selectbox(
+        "カテゴリで絞り込み",
+        ["全て"] + COMMAND_CATEGORIES,
+        key="command_category"
+    )
+    
+    filtered_commands = COMMANDS
+    if selected_cmd_category != "全て":
+        filtered_commands = [
+            cmd for cmd in COMMANDS 
+            if cmd.get('category') == selected_cmd_category
+        ]
+    
+    st.info(f"📌 {len(filtered_commands)}個のコマンドが見つかりました")
+    
+    for i, cmd in enumerate(filtered_commands):
+        category_tag = cmd.get('category', 'その他')
+        cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
+        
+        # テンプレートの取得
+        template = cmd.get('template', {})
+        if isinstance(template, dict):
+            cmd_template = template.get(st.session_state.edition, '')
+            if isinstance(cmd_template, list):
+                cmd_template = cmd_template[0] if cmd_template else ''
+        else:
+            cmd_template = template
+        
+        with st.expander(f"📌 [{category_tag}] {cmd_name}", expanded=False):
+            st.code(cmd_template, language='bash')
+            st.markdown(f"**解説:** {cmd.get('desc', '')}")
+            if 'note' in cmd and cmd['note']:
+                st.markdown(f"**補足:** {cmd['note']}")
+            
+            # キーワード表示
+            keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
+            if keywords:
+                st.markdown(f"**検索キーワード:** {', '.join(keywords[:10])}")
+                if len(keywords) > 10:
+                    st.markdown(f"*...他{len(keywords)-10}個*")
 
 # ========== 設定画面 ==========
 elif menu == "⚙️ 設定":
@@ -1107,168 +1300,26 @@ elif menu == "⚙️ 設定":
     st.success(f"✅ 現在のバージョン: **{st.session_state.edition}**")
     
     st.markdown("---")
-    st.markdown("### 📝 研究用データ記録設定")
-    
-    enable_log = st.toggle(
-        "📊 データをGoogle Sheetsに記録",
-        value=st.session_state.enable_logging,
-        help="入力文と生成結果を記録（機械学習研究用）"
-    )
-    st.session_state.enable_logging = enable_log
-    
-    if enable_log:
-        st.success("✅ データ記録: 有効")
-        
-        with st.expander("📋 記録される情報の詳細"):
-            st.markdown("""
-            ### 📊 記録項目一覧
-            
-            | カラム | 内容 | 例 |
-            |--------|------|-----|
-            | A | タイムスタンプ | 2024-01-15 14:30:00 |
-            | B | セッションID | abc123... |
-            | C | ユーザー入力 | パンが欲しい |
-            | D | AI正規化結果 | 自分にパンを1個与える |
-            | E | ハイブリッドコマンド | /give @s bread 1 |
-            | F | AI単体コマンド | /give @s bread 1 |
-            | G | エディション | 統合版 |
-            | H | ハイブリッド処理時間 | 1.23秒 |
-            | I | AI単体処理時間 | 0.98秒 |
-            | J | ハイブリッドエラー | （エラー内容） |
-            | K | AI単体エラー | （エラー内容） |
-            | L | 使用モデル | gemini-1.5-flash |
-            | M | ユーザー評価 | 1-5 |
-            | N | 好みの版 | ハイブリッド版/AI単体版 |
-            | O | コメント | （ユーザーの感想） |
-            
-            ### 🎯 研究での活用方法
-            - **精度評価**: エラー率の比較
-            - **速度評価**: 処理時間の分析
-            - **ユーザー評価**: フィードバックの集計
-            - **モデル改善**: 訓練データとして使用
-            """)
-        
-        # Google Sheets設定状況
-        if GSPREAD_AVAILABLE:
-            if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
-                st.success("✅ Google Sheets API: 設定済み")
-                
-                # スプレッドシートURL確認
-                spreadsheet_url = st.secrets.get("SPREADSHEET_URL", None)
-                if spreadsheet_url:
-                    st.info(f"📊 記録先: [スプレッドシートを開く]({spreadsheet_url})")
-                else:
-                    st.warning("⚠️ SPREADSHEET_URLが設定されていません")
-                
-                # セッション情報
-                st.markdown("---")
-                st.markdown("### 🔑 セッション情報")
-                st.code(f"セッションID: {st.session_state.session_id}")
-                st.caption("このIDで同一ユーザーの複数の入力を追跡できます")
-                
-            else:
-                st.warning("⚠️ Google Sheets API: 未設定")
-                
-                with st.expander("🔧 設定方法（詳細）"):
-                    st.markdown("""
-                    ### Google Sheets連携の設定手順
-                    
-                    #### 1️⃣ Google Cloud Projectを作成
-                    1. https://console.cloud.google.com/ にアクセス
-                    2. 新しいプロジェクトを作成
-                    3. プロジェクト名: 例「Minecraft Command Research」
-                    
-                    #### 2️⃣ APIを有効化
-                    1. 「APIとサービス」→「ライブラリ」
-                    2. 以下を検索して有効化:
-                       - **Google Sheets API**
-                       - **Google Drive API**
-                    
-                    #### 3️⃣ サービスアカウントを作成
-                    1. 「APIとサービス」→「認証情報」
-                    2. 「認証情報を作成」→「サービスアカウント」
-                    3. 名前: 例「minecraft-sheets-writer」
-                    4. 役割: 「編集者」
-                    5. JSONキーをダウンロード
-                    
-                    #### 4️⃣ スプレッドシートを作成
-                    1. Google Sheetsで新規作成
-                    2. タイトル: `Minecraft Command Generation Log`
-                    3. **ヘッダー行（A1〜O1）**:
-                    ```
-                    タイムスタンプ | セッションID | ユーザー入力 | AI正規化結果 | ハイブリッドコマンド | AI単体コマンド | エディション | ハイブリッド処理時間 | AI単体処理時間 | ハイブリッドエラー | AI単体エラー | 使用モデル | 評価 | 好みの版 | コメント
-                    ```
-                    4. サービスアカウントのメールアドレスに**編集権限**を付与
-                       - 例: `minecraft-sheets-writer@your-project.iam.gserviceaccount.com`
-                    
-                    #### 5️⃣ Streamlit Secretsに追加
-                    Streamlit Cloud → Settings → Secrets に以下を追加:
-                    
-                    ```toml
-                    # Gemini API Key
-                    GEMINI_API_KEY = "AIzaSy..."
-                    
-                    # Spreadsheet URL
-                    SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/..."
-                    
-                    # Google Cloud Service Account
-                    # （ダウンロードしたJSONの内容をコピペ）
-                    [gcp_service_account]
-                    type = "service_account"
-                    project_id = "your-project-id"
-                    private_key_id = "..."
-                    private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
-                    client_email = "minecraft-sheets-writer@your-project.iam.gserviceaccount.com"
-                    client_id = "..."
-                    auth_uri = "https://accounts.google.com/o/oauth2/auth"
-                    token_uri = "https://oauth2.googleapis.com/token"
-                    auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-                    client_x509_cert_url = "..."
-                    ```
-                    
-                    #### 6️⃣ テスト
-                    1. アプリを再起動
-                    2. コマンドを1回生成
-                    3. スプレッドシートに行が追加されていればOK✅
-                    """)
-        else:
-            st.error("❌ gspreadライブラリがインストールされていません")
-            st.code("requirements.txt に以下を追加:\ngspread\noauth2client")
-        
-        # ローカルログのダウンロード
-        if 'local_logs' in st.session_state and st.session_state.local_logs:
-            st.markdown("---")
-            st.markdown("### 💾 ローカルログ")
-            st.info(f"📝 {len(st.session_state.local_logs)}件のログが保存されています")
-            
-            col_dl1, col_dl2 = st.columns(2)
-            with col_dl1:
-                if st.button("📥 JSONでダウンロード", use_container_width=True):
-                    log_json = json.dumps(st.session_state.local_logs, ensure_ascii=False, indent=2)
-                    st.download_button(
-                        label="💾 ダウンロード開始",
-                        data=log_json,
-                        file_name=f"command_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                        mime="application/json",
-                        use_container_width=True
-                    )
-            
-            with col_dl2:
-                if st.button("🗑️ ローカルログをクリア", use_container_width=True):
-                    st.session_state.local_logs = []
-                    st.success("✅ ローカルログをクリアしました")
-                    st.rerun()
-    else:
-        st.info("ℹ️ データ記録: 無効")
-    
-    st.markdown("---")
     st.markdown("### 🤖 AI機能設定")
     
     st.markdown("**Gemini API キー**")
     if GEMINI_API_KEY:
         st.success("✅ APIキーが設定されています")
-        masked_key = f"{GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}"
-        st.code(masked_key)
+        
+        # 利用可能なモデルをチェック
+        if st.button("🔍 利用可能なモデルを確認"):
+            with st.spinner("モデルをチェック中..."):
+                import asyncio
+                available_models = asyncio.run(check_available_models())
+                
+                if available_models:
+                    st.success(f"✅ {len(available_models)}個のモデルが利用可能です")
+                    with st.expander("📋 モデル一覧"):
+                        for model in available_models:
+                            st.code(model)
+                else:
+                    st.error("❌ 利用可能なモデルが見つかりませんでした")
+                    st.info("APIキーが正しいか確認してください")
     else:
         st.warning("⚠️ APIキーが未設定です")
         st.info("Streamlit Cloudの場合: Settings → Secrets に `GEMINI_API_KEY = 'your-api-key'` を追加")
@@ -1278,14 +1329,49 @@ elif menu == "⚙️ 設定":
         st.markdown("""
         1. [Google AI Studio](https://aistudio.google.com/app/apikey) にアクセス
         2. 「Create API Key」をクリック
-        3. APIキーをコピー（`AIzaSy...`で始まる）
-        4. Streamlit Secretsに追加:
-        ```toml
-        GEMINI_API_KEY = "AIzaSy..."
-        ```
+        3. APIキーをコピー
+        4. Streamlit Secretsまたは環境変数に設定
+        
+        **注意:** APIキーは `AIzaSy...` で始まる形式です
         """)
+    
+    st.markdown("---")
+    st.markdown("### 📊 データファイル情報")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("アイテム数", f"{len(ITEMS)}個")
+        st.metric("アイテムカテゴリ", f"{len(ITEM_CATEGORIES)}種類")
+    with col2:
+        st.metric("コマンド数", f"{len(COMMANDS)}個")
+        st.metric("コマンドカテゴリ", f"{len(COMMAND_CATEGORIES)}種類")
+    
+    st.markdown("---")
+    st.markdown("### 📁 ファイル構成")
+    st.code("""
+プロジェクトフォルダ/
+├── app.py (このファイル)
+├── item_data.py (アイテムデータ)
+└── command_data.py (コマンドデータ)
+    """)
+    
+    st.markdown("---")
+    st.markdown("### 📚 その他の機能（準備中）")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📖 サイトの使い方"):
+            st.info("使い方ページは準備中です")
+        if st.button("📈 コマンド履歴"):
+            st.info("履歴機能は準備中です")
+    
+    with col2:
+        if st.button("🖼 背景を変更"):
+            st.info("背景変更機能は準備中です")
+        if st.button("📝 パッチノート"):
+            st.info("パッチノートは準備中です")
 
 # フッター
 st.markdown("---")
-st.markdown("*Minecraftコマンド生成ツール - 研究用データ収集機能付き*")
-st.markdown("🎮 統合版・Java版両対応 | 📊 研究データ自動記録")
+st.markdown("*Minecraftコマンド生成ツール - Powered by Streamlit*")
+st.markdown("🎮 統合版・Java版両対応")
