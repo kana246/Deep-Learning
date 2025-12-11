@@ -1249,4 +1249,4 @@ elif menu == "⚙️ 設定":
 # フッター
 st.markdown("---")
 st.markdown("*Minecraftコマンド生成ツール - 研究用データ収集機能付き*")
-st.markdown("🎮 統合版・Java版両対応 | 📊 研究データ自動記録"
+st.markdown("🎮 統合版・Java版両対応 | 📊 研究データ自動記録")
