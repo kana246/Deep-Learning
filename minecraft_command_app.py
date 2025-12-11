@@ -150,32 +150,18 @@ DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです
 - [プレイヤー名] : 特定のプレイヤー
 
 【主要コマンド形式】
-■アイテム付与
-/give [対象] [アイテムID] [数量]
-例: /give @s diamond 1
-例: /give @s iron_pickaxe 1
-
-■エフェクト付与
-/effect [対象] [効果ID] [秒数] [レベル]
-例: /effect @s speed 60 2
-例: /effect @a regeneration 30 1
-
-■テレポート
-/tp [対象] [x] [y] [z]
-/tp [対象] ~ ~10 ~
-
-■ゲームモード変更
-/gamemode creative
-/gamemode survival
-
-■天気変更
-/weather clear
-/weather rain
-/weather thunder
-
-■時間変更
-/time set day
-/time set night
+内容	エディション	コマンド構文
+1.時間を変更する	統合版	/time set 時間
+2.天候を変える	統合版	/weather 天候
+3.ゲームモードを変更する	統合版	/gamemode ゲームモード
+4.テレポートする	統合版	/tp 座標x y z
+5.スポーン位置をきめる	統合版	/setworldspawn 座標x y z
+6.構造物の座標を調べる	統合版	/locate structure 構造物ID
+7.アイテムを与える	統合版	/give アイテムID
+8.ブロックをしきつめる	統合版	/fill 始点座標x y z 終点座標x y z ブロックID
+9.召喚する	統合版	/summon エンティティID
+10.アイテムを消す	統合版	/clear @s アイテムID
+11.モブを消す	統合版	/kill @e[type=モブID]
 
 【アイテムID例】
 - ダイヤモンド: diamond
@@ -205,10 +191,6 @@ DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです
 - 半スタック → 32
 - 明示的な数値があればその数値
 - 省略時 → 1
-
-【エディション】
-現在のエディション: {edition}
-※統合版の場合は統合版のコマンド形式を、Java版の場合はJava版の形式を使用
 
 【入力】
 {user_input}
