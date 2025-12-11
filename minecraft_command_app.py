@@ -981,37 +981,52 @@ elif menu == "🛠 コマンド生成":
                 submit_feedback = st.form_submit_button("📤 評価を送信してデータを記録", type="primary", use_container_width=True)
                 
                 if submit_feedback:
-                    # セッション状態から生成データを取得
+                    # デバッグ: セッション状態から生成データを取得
                     gen_data = st.session_state.get(f'generation_data_{generation_id}', {})
+                    
+                    # デバッグ情報を表示
+                    st.write("🔍 デバッグ情報:")
+                    st.write(f"- generation_id: {generation_id}")
+                    st.write(f"- enable_logging: {st.session_state.enable_logging}")
+                    st.write(f"- GSPREAD_AVAILABLE: {GSPREAD_AVAILABLE}")
+                    st.write(f"- gen_data keys: {list(gen_data.keys())}")
                     
                     # Google Sheetsに記録（評価込み）
                     if st.session_state.enable_logging:
-                        with st.spinner("📝 データを記録中..."):
-                            if GSPREAD_AVAILABLE:
-                                success = log_research_data(
-                                    gen_data.get('user_input', user_input),
-                                    gen_data.get('normalized_text', ''),
-                                    gen_data.get('hybrid_commands', ''),
-                                    gen_data.get('ai_direct_commands', ''),
-                                    gen_data.get('edition', st.session_state.edition),
-                                    hybrid_time=gen_data.get('hybrid_time'),
-                                    ai_time=gen_data.get('ai_time'),
-                                    hybrid_error=gen_data.get('hybrid_error'),
-                                    ai_error=gen_data.get('ai_error'),
-                                    used_model=gen_data.get('used_model'),
-                                    user_rating=user_rating,
-                                    preferred_version=preferred_version,
-                                    user_comment=user_comment
-                                )
-                                if success:
-                                    st.success("✅ 評価とデータをGoogle Sheetsに記録しました！ありがとうございます 🎉")
-                                    st.balloons()
-                                    # 記録済みフラグを設定
-                                    st.session_state[f'submitted_{generation_id}'] = True
-                                else:
-                                    st.error("❌ Google Sheetsへの記録に失敗しました")
-                            else:
-                                st.warning("⚠️ Google Sheets未設定のため、記録できません")
+                        if GSPREAD_AVAILABLE:
+                            with st.spinner("📝 データを記録中..."):
+                                try:
+                                    st.write("📝 log_research_data を呼び出し中...")
+                                    success = log_research_data(
+                                        gen_data.get('user_input', user_input),
+                                        gen_data.get('normalized_text', ''),
+                                        gen_data.get('hybrid_commands', ''),
+                                        gen_data.get('ai_direct_commands', ''),
+                                        gen_data.get('edition', st.session_state.edition),
+                                        hybrid_time=gen_data.get('hybrid_time'),
+                                        ai_time=gen_data.get('ai_time'),
+                                        hybrid_error=gen_data.get('hybrid_error'),
+                                        ai_error=gen_data.get('ai_error'),
+                                        used_model=gen_data.get('used_model'),
+                                        user_rating=user_rating,
+                                        preferred_version=preferred_version,
+                                        user_comment=user_comment
+                                    )
+                                    st.write(f"✅ log_research_data 結果: {success}")
+                                    
+                                    if success:
+                                        st.success("✅ 評価とデータをGoogle Sheetsに記録しました！ありがとうございます 🎉")
+                                        st.balloons()
+                                        # 記録済みフラグを設定
+                                        st.session_state[f'submitted_{generation_id}'] = True
+                                    else:
+                                        st.error("❌ Google Sheetsへの記録に失敗しました（関数がFalseを返しました）")
+                                except Exception as e:
+                                    st.error(f"❌ エラーが発生しました: {e}")
+                                    import traceback
+                                    st.code(traceback.format_exc())
+                        else:
+                            st.warning("⚠️ gspreadライブラリが利用できません")
                     else:
                         st.warning("⚠️ データ記録が無効になっています。設定ページで有効にしてください。")
             
