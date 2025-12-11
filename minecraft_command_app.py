@@ -1,3 +1,329 @@
+きゃん
+canonn246
+オンライン
+
+24B1025平本兼続
+
+スレ主
+ — 2025/10/16 13:13
+張ってって
+24B1025平本兼続
+
+スレ主
+ — 2025/10/16 13:14
+添付ファイル種類：acrobat
+LLM固有表現.pdf
+787.98 KB
+添付ファイル種類：acrobat
+JSAI2022_1J4OS13a02.pdf
+356.70 KB
+24B1025平本兼続
+
+スレ主
+ — 2025/10/16 13:22
+https://note.nkmk.me/python-janome-tutorial/
+Python, Janomeで日本語の形態素解析、分かち書き（...
+JanomeはPythonの形態素解析エンジン。日本語のテキストを形態素ごとに分割して品詞を判定したり分かち書き（単語に分割）したりすることができる。pipでインストール可能。 mocobeta/janome: Japanese morphologica ...
+Python, Janomeで日本語の形態素解析、分かち書き（...
+24B1032矢野叶 — 2025/10/16 13:35
+| ファイル名 / シート名        | 内容      | 主なカラム例                                 |
+| ------------------- | ------- | -------------------------------------- |
+| commands.xlsx   | コマンドの種類 | コマンド名 / 説明 / 例文 / 構文テンプレート     |
+| items.xlsx      | アイテム    | アイテム名_日本語 / 英語ID / カテゴリ / 使用例  |
+| mobs.xlsx       | モブ      | モブ名_日本語 / 英語ID / 特徴 / 敵対性      |
+| selectors.xlsx  | セレクター   | セレクター / 対象 / 説明 / 例文           |
+| effects.xlsx    | エフェクト   | 効果名 / ID / 効果内容 / 持続時間 / レベル |
+| structures.xlsx | 建造物     | 建造物名 / カテゴリ / 説明                 |
+| biomes.xlsx     | バイオーム   | バイオーム名 / 特徴 / 気候 / 生成例         |
+24B1025平本兼続
+
+スレ主
+ — 2025/10/16 13:40
+https://aismiley.co.jp/ai_news/bert/
+AIポータルメディアAIsmiley
+AIsmiley編集部
+Googleが誇る「BERT」とは？次世代の自然言語処理の...
+BERTとは、Bidirectional Encoder Representations from Transformersを略した自然言語処理モデルであり、2018年10月にGoogle社のJacob Devlin氏らが発表したことで、大きな注目を集めました。日本語では「Transformerによる双方向のエンコード表現」と訳されています。
+Googleが誇る「BERT」とは？次世代の自然言語処理の...
+24B1025平本兼続
+
+スレ主
+ — 2025/10/16 18:42
+https://qiita.com/nal_dal_dere/items/95e173068af399e61981
+Qiita
+PyinstallerでPythonプログラムをexe化する手順書（Windo...
+Python環境のないユーザーにも自分の作ったPythonプログラムを活用してほしい！ （手順をすぐ見る） Pythonは習得が簡単な言語ですので、ちょっと慣れると色々なプログラムが書けるようになります。 特に日常生活や仕事で便利に使えるプログラムがサッとか...
+PyinstallerでPythonプログラムをexe化する手順書（Windo...
+24B1025平本兼続
+
+スレ主
+ — 2025/10/23 15:55
+https://ja.minecraft.wiki/w/コマンド
+Minecraft Wiki
+コマンド
+コマンド（英：Command）、またはコンソールコマンド（英：Console Command）とは、特定のテキストを入力することによって利用できる高度な要素である。
+コマンド
+24B1025平本兼続
+
+スレ主
+ — 2025/10/23 16:38
+画像
+24B1025平本兼続
+
+スレ主
+ — 2025/10/30 12:04
+ポイント    BERT    GPT API
+主用途    コマンド分類（既存テンプレート選択）    コマンド生成（文章→文字列）
+開発コスト    学習データ準備が必要    プロンプト設計が必要
+処理速度    高速    遅め（通信あり）
+安定性    高い    やや不安定
+オフライン対応    可能    不可
+柔軟性    低い    高い
+24B1025平本兼続
+
+スレ主
+ — 2025/10/30 13:55
+https://minecraft-yutakura.com/recipelist/
+マイクラ攻略まとめ
+【1.21対応】全アイテムID/全レシピ一覧【検索&フ...
+全アイテムのアイテムIDやレシピ確認に便利なマイクラのアイテムID一覧とレシピ一覧について分かりやすく画像付きで検索できます。アイテム名やワードを入力すると対象のアイテムが表示されます。「diamond」など英名（ID）でも検索できます。統合版・Java...
+【1.21対応】全アイテムID/全レシピ一覧【検索&フ...
+https://hikicomoron.net/minecraft_mob_id
+ひきこもろん
+【マイクラ】全mobのID一覧とコマンドによる出現...
+マインクラフトに登場するmobのID一覧です。 コマンド/summonなどの呼び出し時などに参考にどうぞ。
+画像
+24B1025平本兼続
+
+スレ主
+ — 2025/10/30 14:09
+https://minecraft-mcworld.com/tutorial/be-selector/
+クラフターズコロニー　-マイクラの配布サイト-
+セレクターと引数
+マイクラのコマンドの多くは、実行するときにプレイヤーやエンティティの指定をする必要があります。セレクターと引数はその指定の際に用いる記法です。 この記事ではコマンドを書くのに必要不可欠なセレクターと引数について解説しています。 セレク...
+セレクターと引数
+selector argsの説明
+24B1025平本兼続
+
+スレ主
+ — 2025/10/30 14:28
+https://minecraft.fandom.com/ja/wiki/NBTフォーマット
+Minecraft Wiki
+NBTフォーマット
+NBTタグとは、Minecraftのセーブファイルの随所で任意のデータを保存するために使用されている樹状データ構造である。このデータ構造は13種類のタグの組み合わせで構成されており、それぞれのタグは数値ID、名前、ペイロードを有している。
+SNBTフォーマッ...
+NBTフォーマット
+nbtタグ
+24B1032矢野叶 — 2025/10/30 14:58
+https://www.youtube.com/@AIcia_Solid/playlists
+YouTube
+AIcia Solid Project
+データサイエンスVtuber アイシア=ソリッド（Aicia Solid）です。
+機械学習、統計、ディープラーニング、AIの動画に加えて、たまに趣味で数学の動画をアップしています。
+
+公式サイトはこちら → https://sites.google.com/view/aicia-official/top
+ファンコミュニティはこち...
+画像
+Ucchy — 2025/10/30 14:59
+RNN
+LSTM
+Word2Vec
+BERT
+GPT
+Transformer 
+24B1025平本兼続
+
+スレ主
+ — 2025/10/30 15:51
+画像
+24B1023奴田翔
+
+ — 2025/10/30 16:56
+エンティティデータファイル設計書1. 概要コマンドによって対象にできるエンティティが異なるため、フラグで管理する統合的なデータ構造を採用します。2. ファイル配置modes/rule_based/data/
+├── init.py
+├── item_data.py          # 既存（アイテムデータ）
+└── entity_data.py        # 新規（エンティティデータ）★これを作成3. データ構造基本構造python# modes/rule_based/data/entity_data.py
+
+entities = {
+    "entity_key": {
+        "name": "日本語名",
+        "desc": "説明文",
+        "category": "カテゴリ",
+        "can_summon": True/False,   # /summon で召喚可能か
+        "can_kill": True/False,     # /kill で対象可能か
+        "can_effect": True/False,   # /effect で対象可能か
+        "can_tp": True/False,       # /tp で対象可能か
+        "aliases": ["別名1", "別名2", ...],
+        "id": {
+            "統合版": "entity_id",
+            "Java版": "minecraft:entity_id"
+        }
+    }
+}フラグの意味フラグ説明can_summon/summon コマンドで召喚できるかcan_kill/kill コマンドで削除対象にできるかcan_effect/effect コマンドでエフェクト付与できるかcan_tp/tp コマンドでテレポート対象にできるか4. カテゴリ分類カテゴリ説明例敵対Mobプレイヤーを攻撃するMobゾンビ、クリーパー、スケルトン中立Mob条件次第で敵対するMobエンダーマン、ゾンビピッグマン、クモ友好Mob敵対しないMob（動物）ウシ、ブタ、ニワトリ、ヒツジ村人系村人関連村人、行商人ボスボスMobウィザー、エンダードラゴンその他エンティティ生物以外矢、ボート、トロッコ、額縁特殊その他特殊なもの落下アイテム、経験値オーブ、TNT5. 実装例例1: ゾンビ（敵対Mob）python"zombie": {
+    "name": "ゾンビ",
+    "desc": "敵対的なアンデッドモブ",
+    "category": "敵対Mob",
+    "can_summon": True,    # 召喚できる
+    "can_kill": True,       # 削除できる
+    "can_effect": True,     # エフェクト付与できる
+    "can_tp": True,         # テレポートできる
+    "aliases": [
+        "ぞんび", "ゾンビ", "zombie", "アンデッド"
+    ],
+    "id": {
+        "統合版": "zombie",
+        "Java版": "minecraft:zombie"
+    }
+}例2: クリーパー（敵対Mob）python"creeper": {
+    "name": "クリーパー",
+    "desc": "爆発する敵対Mob",
+    "category": "敵対Mob",
+    "can_summon": True,
+    "can_kill": True,
+    "can_effect": True,
+    "can_tp": True,
+    "aliases": [
+        "くりーぱー", "クリーパー", "creeper", "匠", "たくみ"
+    ],
+    "id": {
+        "統合版": "creeper",
+        "Java版": "minecraft:creeper"
+    }
+}例3: ウシ（友好Mob）python"cow": {
+    "name": "ウシ",
+    "desc": "友好的な動物。ミルクと革を入手できる",
+    "category": "友好Mob",
+    "can_summon": True,
+    "can_kill": True,
+    "can_effect": True,
+    "can_tp": True,
+    "aliases": [
+        "うし", "ウシ", "cow", "牛", "ぎゅう"
+    ],
+    "id": {
+        "統合版": "cow",
+        "Java版": "minecraft:cow"
+    }
+}例4: 村人（村人系）python"villager": {
+    "name": "村人",
+    "desc": "取引ができるNPC",
+    "category": "村人系",
+    "can_summon": True,
+    "can_kill": True,
+    "can_effect": True,
+    "can_tp": True,
+    "aliases": [
+        "むらびと", "村人", "villager", "村民"
+    ],
+    "id": {
+        "統合版": "villager",
+        "Java版": "minecraft:villager"
+    }
+}例5: 矢（その他エンティティ）python"arrow": {
+    "name": "矢",
+    "desc": "飛んでいる矢のエンティティ",
+    "category": "その他エンティティ",
+    "can_summon": True,     # 召喚できる（空中に矢を出現）
+    "can_kill": True,       # 削除できる
+    "can_effect": False,    # エフェクト付与不可
+    "can_tp": True,         # テレポート可能
+    "aliases": [
+        "や", "矢", "arrow", "アロー"
+    ],
+    "id": {
+        "統合版": "arrow",
+        "Java版": "minecraft:arrow"
+    }
+}例6: 落下アイテム（特殊）python"item": {
+    "name": "アイテム（落下）",
+    "desc": "地面に落ちているアイテムのエンティティ",
+    "category": "特殊",
+    "can_summon": False,    # summonでは出せない（giveを使う）
+    "can_kill": True,       # 削除できる（よく使う！）
+    "can_effect": False,    # エフェクト付与不可
+    "can_tp": False,        # テレポート不可
+    "aliases": [
+        "あいてむ", "アイテム", "item", "落ちてる", "ドロップ"
+    ],
+    "id": {
+        "統合版": "item",
+        "Java版": "minecraft:item"
+    }
+}例7: ボート（その他エンティティ）python"boat": {
+    "name": "ボート",
+    "desc": "水上を移動する乗り物",
+    "category": "その他エンティティ",
+    "can_summon": True,
+    "can_kill": True,
+    "can_effect": False,
+    "can_tp": True,
+    "aliases": [
+        "ぼーと", "ボート", "boat", "船", "ふね"
+    ],
+    "id": {
+        "統合版": "boat",
+        "Java版": "minecraft:boat"
+    }
+}例8: ウィザー（ボス）python"wither": {
+    "name": "ウィザー",
+    "desc": "強力なボスMob",
+    "category": "ボス",
+    "can_summon": True,
+    "can_kill": True,
+    "can_effect": True,
+    "can_tp": True,
+    "aliases": [
+        "うぃざー", "ウィザー", "wither", "ボス"
+    ],
+    "id": {
+        "統合版": "wither",
+        "Java版": "minecraft:wither"
+    }
+}
+Ucchy — 2025/10/30 18:46
+BERTによる自然言語処理入門の書籍8章に固有表現抽出の例があったので、moodleに書籍をアップしておきましたので、やってみてください。
+24B1023奴田翔
+
+ — 2025/11/25 14:41
+# 📘 UForge 開発ドキュメント
+
+**UForge - Minecraft Command Generator**  
+内山研究室 コマンド生成ツール開発プロジェクト
+
+---
+展開
+message.txt
+20 KB
+24B1032矢野叶 — 2025/12/03 13:39
+https://qiita.com/Hawaii/items/5831e667723b66b46fba
+Qiita
+【機械学習】ランダムフォレストを理解する - Qiita
+1.目的 機械学習をやってみたいと思った場合、scikit-learn等を使えば誰でも比較的手軽に実装できるようになってきています。 但し、仕事で成果を出そうとしたり、より自分のレベルを上げていくためには 「背景はよくわからないけど何かこの結果になりまし...
+【機械学習】ランダムフォレストを理解する - Qiita
+https://qiita.com/c60evaporator/items/8864f7c1384a3c6e9bd9
+Qiita
+機械学習の定番「サポートベクターマシン（SVM）...
+はじめに 機械学習の定番アルゴリズムの1つである「サポートベクターマシン（SVM）」ですが、 実用的、かつ比較的シンプルなアルゴリズムから、入門書等でも取り上げられることが多いです。 ただし、解説の抜け漏れや、難解すぎる書籍や記事が多いと感...
+機械学習の定番「サポートベクターマシン（SVM）...
+Python3年生機械学習のしくみ にSVM、ランダムフォレストについて
+131～158 
+24B1025平本兼続
+
+スレ主
+ — 11:05
+import streamlit as st
+from pathlib import Path
+import sys
+import os
+import importlib.util
+import json... （残り1 KB）
+展開
+message.txt
+51 KB
+24B1025平本兼続
+
+スレ主
+ — 13:19
 import streamlit as st
 from pathlib import Path
 import sys
@@ -28,7 +354,7 @@ GEMINI_ENDPOINTS = [
 
 # 正規化プロンプト
 NORMALIZATION_PROMPT = """あなたは「Minecraftコマンド生成のための自然言語正規化エンジン」です。
-ユーザーの曖昧な自然言語を、明確で一貫した "正規化出力" に変換してください。
+ユーザーの曖昧な自然言語を、明確で一貫した “正規化出力” に変換してください。
 
 ────────────────────────
 【出力形式】
@@ -67,7 +393,111 @@ NORMALIZATION_PROMPT = """あなたは「Minecraftコマンド生成のための
 ────────────────────────
 
 【Minecraft用語マッピング】
-以下の表現は必ず指定の"正規アイテム名/効果名"に変換する。
+以下の表現は必ず指定の“正規アイテム名/効果名”に変換する。
+
+■道具
+掘るやつ/採掘道具/ツルハシ/つるはし/ピッケル → ピッケル  
+斧/木切るの/伐採道具 → 斧  
+釣り竿/魚釣りたい → 釣り竿  
+水汲むやつ/バケツ → バケツ  
+シャベル/スコップ → シャベル  
+
+■武器・防具
+武器/攻撃できるやつ/剣 → 剣  
+弓矢/遠距離武器/bow → 弓  
+防具一式/armor/鎧全部 → 「ヘルメット、チェストプレート、レギンス、ブーツ」に展開  
+頭装備/兜/ヘルメット → ヘルメット  
+
+■ブロック・素材
+木材/wood/木のブロック → 木材  
+石ころ/cobblestone/丸石 → 丸石  
+光るやつ/明かり/たいまつ/松明 → 松明  
+土/土ブロック/dirt → 土  
+ガラス/透明なブロック → ガラス  
+
+■食料
+食べ物/food/腹減った → パン  
+肉/ステーキ/beef → ステーキ  
+パン/bread → パン  
+果物/リンゴ/apple → リンゴ  
+
+■特殊アイテム
+爆弾/爆発するやつ → TNT  
+ワープ/瞬間移動アイテム → エンダーパール  ... （残り5 KB）
+折りたたみ
+message.txt
+55 KB
+﻿
+import streamlit as st
+from pathlib import Path
+import sys
+import os
+import importlib.util
+import json
+from datetime import datetime
+import time
+import uuid
+
+# Google Sheets API用
+try:
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+    GSPREAD_AVAILABLE = True
+except ImportError:
+    GSPREAD_AVAILABLE = False
+
+# Gemini APIの設定
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
+GEMINI_ENDPOINTS = [
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+]
+
+# 正規化プロンプト
+NORMALIZATION_PROMPT = """あなたは「Minecraftコマンド生成のための自然言語正規化エンジン」です。
+ユーザーの曖昧な自然言語を、明確で一貫した “正規化出力” に変換してください。
+
+────────────────────────
+【出力形式】
+必ず次のどちらかの形式で出力する：
+
+①「[対象]に[アイテム名]を[数量]個与える」
+②「[対象]に[効果名]の効果を付ける」
+
+複数の場合は「、」で区切り、ルールに従って複数行ではなく1行で出力する。
+説明・補足は禁止。正規化結果のみ返す。
+────────────────────────
+
+【対象の正規化ルール】
+以下の単語・表現を必ず次のいずれかに置き換える：
+
+・自分/me/@p/私/僕/俺 → **自分**
+・あいつ/他の人/ほかのプレイヤー/あの人/彼/彼女 → **他のプレイヤー**
+・みんな/全員/all/@a → **全プレイヤー**
+・最も近い人/ランダムな人/@r → **最も近いプレイヤー**
+・固有名 (例: Steve, Alex) → **そのプレイヤー名**
+・対象が書かれていない場合 → **自分**
+
+対象を複数書いてはいけない。もっとも強く示唆された対象を採用する。
+────────────────────────
+
+【数量の正規化】
+以下の語は必ず数値に置き換える：
+
+・大量に/たくさん/いっぱい → 64個
+・1スタック/スタック → 64個
+・半スタック → 32個
+・少し/数個/ちょっと → 5個
+・具体的数値があればその数値を使用
+・数量省略 → **1個**
+※ただし松明などの消耗品は **数量省略 → 10個**
+────────────────────────
+
+【Minecraft用語マッピング】
+以下の表現は必ず指定の“正規アイテム名/効果名”に変換する。
 
 ■道具
 掘るやつ/採掘道具/ツルハシ/つるはし/ピッケル → ピッケル  
@@ -314,6 +744,53 @@ def log_research_data(
         
     except Exception as e:
         st.error(f"Google Sheets記録エラー: {e}")
+        return False
+
+# ========== ローカルログ記録（フォールバック） ==========
+def log_to_local(
+    user_input,
+    normalized_text,
+    hybrid_commands,
+    ai_direct_commands,
+    edition,
+    hybrid_time=None,
+    ai_time=None,
+    hybrid_error=None,
+    ai_error=None,
+    used_model=None
+):
+    """
+    ローカルファイルに記録（Google Sheets利用不可の場合）
+    """
+    try:
+        log_data = {
+            "timestamp": datetime.now().isoformat(),
+            "session_id": st.session_state.session_id,
+            "user_input": user_input,
+            "normalized_text": normalized_text,
+            "hybrid_commands": hybrid_commands,
+            "ai_direct_commands": ai_direct_commands,
+            "edition": edition,
+            "hybrid_time": hybrid_time,
+            "ai_time": ai_time,
+            "hybrid_error": hybrid_error,
+            "ai_error": ai_error,
+            "used_model": used_model
+        }
+        
+        # セッション状態にログを保存
+        if 'local_logs' not in st.session_state:
+            st.session_state.local_logs = []
+        
+        st.session_state.local_logs.append(log_data)
+        
+        # 最新100件のみ保持
+        if len(st.session_state.local_logs) > 100:
+            st.session_state.local_logs = st.session_state.local_logs[-100:]
+        
+        return True
+    except Exception as e:
+        st.error(f"ローカルログエラー: {e}")
         return False
 
 # ========== AI正規化関数 ==========
@@ -720,20 +1197,20 @@ if menu == "🏠 ホーム":
         1. 左メニューから機能を選択
         2. やりたいことを日本語で入力
         3. コマンドが自動生成されます
-        4. **評価を入力して送信**（必須）
+        4. コピー＆ペーストして使用
         """)
     
     st.markdown("---")
     st.markdown("### 📊 研究データ収集について")
     
     if st.session_state.enable_logging:
-        st.info("✅ **データ記録: 有効** - あなたの入力と評価が研究用に記録されます")
+        st.info("✅ **データ記録: 有効** - あなたの入力と生成結果が研究用に記録されます")
         st.markdown("""
         **記録される情報:**
         - 入力文と生成されたコマンド
         - 処理時間とエラー情報
         - 使用したAIモデル
-        - **ユーザー評価（必須）**
+        - ユーザー評価（任意）
         
         このデータは機械学習モデルの改善に使用されます。
         """)
@@ -932,69 +1409,118 @@ elif menu == "🛠 コマンド生成":
                         ai_time_log = time.time() - ai_start
                         ai_error_log = str(e)
             
-            # ユーザー評価UI（生成結果と同時に表示）
-            st.markdown("---")
-            st.markdown("### 📝 この結果を評価してください")
-            st.info("⚠️ **評価は必須です。送信ボタンを押すとデータが記録されます。**")
-            
-            # フォームで評価と記録を同時処理
-            with st.form(key=f"feedback_form_{generation_id}"):
-                col_fb1, col_fb2, col_fb3 = st.columns([2, 2, 3])
-                
-                with col_fb1:
-                    user_rating = st.select_slider(
-                        "総合評価 ⭐",
-                        options=[1, 2, 3, 4, 5],
-                        value=3,
-                        help="1: 悪い 〜 5: 良い"
-                    )
-                
-                with col_fb2:
-                    preferred_version = st.radio(
-                        "どちらが良かったですか？",
-                        ["ハイブリッド版", "AI単体版", "どちらも同じ"],
-                        horizontal=True,
-                        index=2
-                    )
-                
-                with col_fb3:
-                    user_comment = st.text_input(
-                        "コメント（任意）",
-                        placeholder="改善点や感想など..."
-                    )
-                
-                submit_feedback = st.form_submit_button("📤 評価を送信してデータを記録", type="primary", use_container_width=True)
-                
-                if submit_feedback:
-                    # Google Sheetsに記録（評価込み）
-                    if st.session_state.enable_logging:
-                        with st.spinner("📝 データを記録中..."):
-                            if GSPREAD_AVAILABLE:
-                                success = log_research_data(
-                                    user_input,
-                                    normalized_text_log,
-                                    hybrid_commands_log,
-                                    ai_direct_commands_log,
-                                    st.session_state.edition,
-                                    hybrid_time=hybrid_time_log,
-                                    ai_time=ai_time_log,
-                                    hybrid_error=hybrid_error_log,
-                                    ai_error=ai_error_log,
-                                    used_model=used_model_log,
-                                    user_rating=user_rating,
-                                    preferred_version=preferred_version,
-                                    user_comment=user_comment
-                                )
-                                if success:
-                                    st.success("✅ 評価とデータをGoogle Sheetsに記録しました！ありがとうございます 🎉")
-                                    st.balloons()
-                                else:
-                                    st.error("❌ Google Sheetsへの記録に失敗しました")
-                            else:
-                                st.warning("⚠️ Google Sheets未設定のため、記録できません")
+            # Google Sheetsに記録
+            if st.session_state.enable_logging:
+                with st.spinner("📝 データを記録中..."):
+                    if GSPREAD_AVAILABLE:
+                        success = log_research_data(
+                            user_input,
+                            normalized_text_log,
+                            hybrid_commands_log,
+                            ai_direct_commands_log,
+                            st.session_state.edition,
+                            hybrid_time=hybrid_time_log,
+                            ai_time=ai_time_log,
+                            hybrid_error=hybrid_error_log,
+                            ai_error=ai_error_log,
+                            used_model=used_model_log
+                        )
+                        if success:
+                            st.success("✅ Google Sheetsに記録しました")
                     else:
-                        st.warning("⚠️ データ記録が無効になっています。設定ページで有効にしてください。")
+                        # ローカルログにフォールバック
+                        log_to_local(
+                            user_input,
+                            normalized_text_log,
+                            hybrid_commands_log,
+                            ai_direct_commands_log,
+                            st.session_state.edition,
+                            hybrid_time=hybrid_time_log,
+                            ai_time=ai_time_log,
+                            hybrid_error=hybrid_error_log,
+                            ai_error=ai_error_log,
+                            used_model=used_model_log
+                        )
+                        st.info("📝 ローカルログに記録しました（Google Sheets未設定）")
             
+            # ユーザーフィードバックUI
+            st.markdown("---")
+            st.markdown("### 📝 この結果を評価してください（任意）")
+            
+            # フィードバック送信フラグをセッション状態で管理
+            feedback_key = f"feedback_sent_{generation_id}"
+            if feedback_key not in st.session_state:
+                st.session_state[feedback_key] = False
+            
+            if not st.session_state[feedback_key]:
+                # フォームを使用してリロードを防ぐ
+                with st.form(key=f"feedback_form_{generation_id}"):
+                    col_fb1, col_fb2, col_fb3 = st.columns([2, 2, 3])
+                    
+                    with col_fb1:
+                        user_rating = st.select_slider(
+                            "総合評価",
+                            options=[1, 2, 3, 4, 5],
+                            value=3,
+                            help="1: 悪い 〜 5: 良い"
+                        )
+                    
+                    with col_fb2:
+                        preferred_version = st.radio(
+                            "どちらが良かったですか？",
+                            ["ハイブリッド版", "AI単体版", "どちらも同じ"],
+                            horizontal=True
+                        )
+                    
+                    with col_fb3:
+                        user_comment = st.text_input(
+                            "コメント（任意）",
+                            placeholder="改善点や感想など..."
+                        )
+                    
+                    submit_feedback = st.form_submit_button("📤 フィードバックを送信", use_container_width=True)
+                    
+                    if submit_feedback:
+                        if GSPREAD_AVAILABLE:
+                            # 最新行を更新する処理
+                            try:
+                                credentials_dict = dict(st.secrets["gcp_service_account"])
+                                scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                                credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+                                client = gspread.authorize(credentials)
+                                
+                                spreadsheet_url = st.secrets.get("SPREADSHEET_URL", None)
+                                if spreadsheet_url:
+                                    spreadsheet = client.open_by_url(spreadsheet_url)
+                                else:
+                                    spreadsheet = client.open("Minecraft Command Generation Log")
+                                
+                                worksheet = spreadsheet.sheet1
+                                
+                                # 最新行を検索（セッションIDとタイムスタンプで照合）
+                                all_values = worksheet.get_all_values()
+                                
+                                # 最後の行を更新
+                                last_row_num = len(all_values)
+                                
+                                if last_row_num > 1:  # ヘッダー行以外が存在する場合
+                                    # M, N, O列（評価、好みの版、コメント）を更新
+                                    worksheet.update_cell(last_row_num, 13, str(user_rating))  # M列
+                                    worksheet.update_cell(last_row_num, 14, preferred_version)  # N列
+                                    worksheet.update_cell(last_row_num, 15, user_comment)      # O列
+                                    
+                                    st.success("✅ フィードバックを送信しました！ありがとうございます")
+                                    st.session_state[feedback_key] = True
+                                    st.rerun()
+                                else:
+                                    st.error("❌ 記録された行が見つかりませんでした")
+                                    
+                            except Exception as e:
+                                st.error(f"フィードバック送信エラー: {e}")
+                        else:
+                            st.warning("⚠️ Google Sheets未設定のため、フィードバックを送信できません")
+            else:
+                st.success("✅ フィードバックは既に送信済みです")
             st.markdown("---")
             st.markdown("### 💡 比較ポイント")
             col_compare1, col_compare2 = st.columns(2)
@@ -1116,74 +1642,6 @@ elif menu == "⚙️ 設定":
                     #### 4️⃣ スプレッドシートを作成
                     1. Google Sheetsで新規作成
                     2. タイトル: `Minecraft Command Generation Log`
-                    3. **ヘッダー行（A1〜O1）**:
-                    ```
-                    タイムスタンプ | セッションID | ユーザー入力 | AI正規化結果 | ハイブリッドコマンド | AI単体コマンド | エディション | ハイブリッド処理時間 | AI単体処理時間 | ハイブリッドエラー | AI単体エラー | 使用モデル | 評価 | 好みの版 | コメント
-                    ```
-                    4. サービスアカウントのメールアドレスに**編集権限**を付与
-                       - 例: `minecraft-sheets-writer@your-project.iam.gserviceaccount.com`
-                    
-                    #### 5️⃣ Streamlit Secretsに追加
-                    Streamlit Cloud → Settings → Secrets に以下を追加:
-                    
-                    ```toml
-                    # Gemini API Key
-                    GEMINI_API_KEY = "AIzaSy..."
-                    
-                    # Spreadsheet URL
-                    SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/..."
-                    
-                    # Google Cloud Service Account
-                    # （ダウンロードしたJSONの内容をコピペ）
-                    [gcp_service_account]
-                    type = "service_account"
-                    project_id = "your-project-id"
-                    private_key_id = "..."
-                    private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n"
-                    client_email = "minecraft-sheets-writer@your-project.iam.gserviceaccount.com"
-                    client_id = "..."
-                    auth_uri = "https://accounts.google.com/o/oauth2/auth"
-                    token_uri = "https://oauth2.googleapis.com/token"
-                    auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-                    client_x509_cert_url = "..."
-                    ```
-                    
-                    #### 6️⃣ テスト
-                    1. アプリを再起動
-                    2. コマンドを1回生成し、評価を送信
-                    3. スプレッドシートに行が追加されていればOK✅
-                    """)
-        else:
-            st.error("❌ gspreadライブラリがインストールされていません")
-            st.code("requirements.txt に以下を追加:\ngspread\noauth2client")
-    else:
-        st.info("ℹ️ データ記録: 無効")
-    
-    st.markdown("---")
-    st.markdown("### 🤖 AI機能設定")
-    
-    st.markdown("**Gemini API キー**")
-    if GEMINI_API_KEY:
-        st.success("✅ APIキーが設定されています")
-        masked_key = f"{GEMINI_API_KEY[:10]}...{GEMINI_API_KEY[-4:]}"
-        st.code(masked_key)
-    else:
-        st.warning("⚠️ APIキーが未設定です")
-        st.info("Streamlit Cloudの場合: Settings → Secrets に `GEMINI_API_KEY = 'your-api-key'` を追加")
-        st.info("ローカルの場合: 環境変数 `GEMINI_API_KEY` を設定")
-    
-    with st.expander("📖 Gemini APIキーの取得方法"):
-        st.markdown("""
-        1. [Google AI Studio](https://aistudio.google.com/app/apikey) にアクセス
-        2. 「Create API Key」をクリック
-        3. APIキーをコピー（`AIzaSy...`で始まる）
-        4. Streamlit Secretsに追加:
-        ```toml
-        GEMINI_API_KEY = "AIzaSy..."
-        ```
-        """)
-
-# フッター
-st.markdown("---")
-st.markdown("*Minecraftコマンド生成ツール - 研究用データ収集機能付き*")
-st.markdown("🎮 統合版・Java版両対応 | 📊 研究データ自動記録（評価必須）")
+                    3. **ヘッ... （残り5 KB）
+message.txt
+55 KB
