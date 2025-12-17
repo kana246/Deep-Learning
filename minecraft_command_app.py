@@ -580,7 +580,6 @@ try:
 except Exception as e:
     load_status['commands_error'] = str(e)
 
-# ========== コマンド検索関数 ==========
 def search_commands(query, edition):
     """
     ユーザーの入力からコマンドを検索(エフェクト対応+数量+ターゲット)
@@ -591,6 +590,7 @@ def search_commands(query, edition):
     results = []
     query_lower = query.lower()
     
+    # ターゲットセレクターの抽出
     target = '@s'  # デフォルト
     if '@a' in query_lower or 'みんな' in query_lower or '全員' in query_lower or '全プレイヤー' in query_lower or 'ぜんぷれいやー' in query_lower or '全てのプレイヤー' in query_lower:
         target = '@a'
@@ -602,6 +602,7 @@ def search_commands(query, edition):
         target = '@e'
     elif '自分' in query_lower or 'me' in query_lower or 'じぶん' in query_lower:
         target = '@s'
+    
     # 数量の抽出
     import re
     quantity = 1  # デフォルト
@@ -664,6 +665,7 @@ def search_commands(query, edition):
                     
                     # ターゲットと数量を反映
                     cmd_text = cmd_template.replace('{item_id}', item_id)
+                    cmd_text = cmd_text.replace('{target}', target)
                     cmd_text = cmd_text.replace('@s', target)
                     
                     # 数量を追加(giveコマンドの場合)
@@ -720,6 +722,7 @@ def search_commands(query, edition):
                     
                     # ターゲットを反映
                     cmd_text = cmd_template.replace('{effect_id}', effect_id)
+                    cmd_text = cmd_text.replace('{target}', target)
                     cmd_text = cmd_text.replace('@s', target)
                     
                     cmd_copy['cmd'] = cmd_text
@@ -735,6 +738,8 @@ def search_commands(query, edition):
             else:
                 # その他のコマンドもターゲットを反映
                 cmd_text = cmd_template
+                if '{target}' in cmd_text:
+                    cmd_text = cmd_text.replace('{target}', target)
                 if '@s' in cmd_text:
                     cmd_text = cmd_text.replace('@s', target)
                 cmd_copy['cmd'] = cmd_text
