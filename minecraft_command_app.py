@@ -526,76 +526,61 @@ try:
 except Exception as e:
     load_status['commands_error'] = str(e)
 
-# ========== コマンド検索関数 ==========
-def search_commands(query, edition):
+def search_commands(query, version):
     """
-    ユーザーの入力からコマンドを検索
+    クエリに基づき辞書からコマンドを検索し、
+    アイテムIDやエフェクトIDを適切に置換する。
     """
-    if not COMMANDS:
-        return []
-    
-    results = []
     query_lower = query.lower()
-    
-    for cmd in COMMANDS:
-        keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
-        if any(keyword.lower() in query_lower for keyword in keywords):
-            cmd_copy = cmd.copy()
+    results = []
+
+    # 1. まず commands 辞書 (command_data.py) をループして、どのコマンド（giveかeffectか）かを決める
+    for cmd_key, info in commands.items():
+        # aliasにマッチするか確認
+        if any(alias in query_lower for alias in info['aliases']):
+            cmd_template = info['template'].get(version, "")
             
-            template = cmd_copy.get('template', {})
-            
-            if isinstance(template, dict):
-                cmd_template = template.get(edition, '')
-                if isinstance(cmd_template, list):
-                    cmd_template = cmd_template[0] if cmd_template else ''
-            else:
-                cmd_template = template
-            
-            if '{item_id}' in str(cmd_template):
-                if ITEMS:
-                    matched_item = None
-                    
-                    for item_key, item_data in ITEMS.items():
-                        item_name = item_data.get('name', '').lower()
-                        if item_name in query_lower:
-                            matched_item = item_data
-                            break
-                    
-                    if not matched_item:
-                        for item_key, item_data in ITEMS.items():
-                            aliases = item_data.get('aliases', [])
-                            for alias in aliases:
-                                if alias.lower() in query_lower:
-                                    matched_item = item_data
-                                    break
-                            if matched_item:
-                                break
-                    
-                    if not matched_item:
-                        matched_item = list(ITEMS.values())[0]
-                    
-                    item_id_data = matched_item.get('id', {})
-                    if isinstance(item_id_data, dict):
-                        item_id = item_id_data.get(edition, '')
-                    else:
-                        item_id = item_id_data
-                    
-                    cmd_copy['cmd'] = cmd_template.replace('{item_id}', item_id)
-                    cmd_copy['item_name'] = matched_item.get('name', '')
-                    cmd_copy['matched_item_key'] = item_key
-                    
-                    desc = cmd_copy.get('desc', '')
-                    if '{item}' in desc:
-                        cmd_copy['desc'] = desc.replace('{item}', matched_item.get('name', ''))
+            # 雛形を作成
+            cmd_entry = {
+                "key": cmd_key,
+                "name": info['name'],
+                "cmd": cmd_template,
+                "note": info.get('note', "")
+            }
+
+            # --- ケースA: アイテム付与コマンドの場合 ---
+            if "{item_id}" in str(cmd_template):
+                matched_id = None
+                for item_key, item_val in items.items():
+                    if any(a in query_lower for a in item_val['aliases']):
+                        matched_id = item_val['id'].get(version)
+                        break
+                
+                if matched_id:
+                    cmd_entry['cmd'] = cmd_template.replace("{item_id}", matched_id)
                 else:
-                    cmd_copy['cmd'] = cmd_template
-            else:
-                cmd_copy['cmd'] = cmd_template
+                    cmd_entry['cmd'] = f"❌ アイテム名が特定できません: {query}"
+
+            # --- ケースB: エフェクト付与コマンドの場合 (ここを追加！) ---
+            elif "{effect_id}" in str(cmd_template):
+                matched_id = None
+                # 前の工程で作った effects 辞書 (effect_data.py) をループ
+                for eff_key, eff_val in effects.items():
+                    if any(a in query_lower for a in eff_val['aliases']):
+                        matched_id = eff_val['id'].get(version)
+                        break
+                
+                if matched_id:
+                    # IDが見つかれば置換
+                    cmd_entry['cmd'] = cmd_template.replace("{effect_id}", matched_id)
+                elif matched_id is None and any(a in query_lower for a in ["発光", "致死毒", "イルカ"]):
+                    # IDが None (特定のバージョンに存在しない) 場合
+                    cmd_entry['cmd'] = f"⚠️ {version} ではこのエフェクトは使用できません。"
+                else:
+                    cmd_entry['cmd'] = f"❌ エフェクト名が特定できません: {query}"
+
+            results.append(cmd_entry)
             
-            cmd_copy['cmd_template'] = cmd_template
-            
-            results.append(cmd_copy)
-    
     return results
 
 # ========== ページ設定 ==========
