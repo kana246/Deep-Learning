@@ -481,13 +481,17 @@ files_in_dir = os.listdir(current_dir)
 
 ITEMS = {}
 ITEM_CATEGORIES = []
+EFFECTS = {}
+EFFECT_CATEGORIES = []
 COMMANDS = []
 COMMAND_CATEGORIES = []
 
 load_status = {
     'items': False,
+    'effects': False,
     'commands': False,
     'items_error': '',
+    'effects_error': '',
     'commands_error': ''
 }
 
@@ -515,7 +519,29 @@ try:
         
 except Exception as e:
     load_status['items_error'] = str(e)
-
+# effect_data.py の読み込み
+try:
+    effect_data_path = os.path.join(current_dir, 'effect_data.py')
+    
+    if os.path.exists(effect_data_path):
+        spec = importlib.util.spec_from_file_location("effect_data", effect_data_path)
+        effect_data = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(effect_data)
+        
+        effects_dict = getattr(effect_data, 'effects', None) or getattr(effect_data, 'EFFECTS', {})
+        EFFECTS = effects_dict
+        
+        if EFFECTS:
+            EFFECT_CATEGORIES = list(set([effect.get('category', 'その他') for effect in EFFECTS.values()]))
+            EFFECT_CATEGORIES.sort()
+        
+        load_status['effects'] = True
+        load_status['effects_count'] = len(EFFECTS)
+    else:
+        load_status['effects_error'] = f"ファイルが見つかりません: {effect_data_path}"
+        
+except Exception as e:
+    load_status['effects_error'] = str(e)
 # command_data.py の読み込み
 try:
     command_data_path = os.path.join(current_dir, 'command_data.py')
@@ -557,7 +583,7 @@ except Exception as e:
 # ========== コマンド検索関数 ==========
 def search_commands(query, edition):
     """
-    ユーザーの入力からコマンドを検索
+    ユーザーの入力からコマンドを検索(エフェクト対応)
     """
     if not COMMANDS:
         return []
@@ -579,6 +605,7 @@ def search_commands(query, edition):
             else:
                 cmd_template = template
             
+            # アイテムIDの置き換え
             if '{item_id}' in str(cmd_template):
                 if ITEMS:
                     matched_item = None
@@ -617,6 +644,54 @@ def search_commands(query, edition):
                         cmd_copy['desc'] = desc.replace('{item}', matched_item.get('name', ''))
                 else:
                     cmd_copy['cmd'] = cmd_template
+            
+            # エフェクトIDの置き換え
+            elif '{effect_id}' in str(cmd_template):
+                if EFFECTS:
+                    matched_effect = None
+                    
+                    # エフェクト名での検索
+                    for effect_key, effect_data in EFFECTS.items():
+                        effect_name = effect_data.get('name', '').lower()
+                        if effect_name in query_lower:
+                            matched_effect = effect_data
+                            break
+                    
+                    # エイリアスでの検索
+                    if not matched_effect:
+                        for effect_key, effect_data in EFFECTS.items():
+                            aliases = effect_data.get('aliases', [])
+                            for alias in aliases:
+                                if alias.lower() in query_lower:
+                                    matched_effect = effect_data
+                                    break
+                            if matched_effect:
+                                break
+                    
+                    # マッチしない場合はデフォルト
+                    if not matched_effect:
+                        matched_effect = list(EFFECTS.values())[0]
+                    
+                    effect_id_data = matched_effect.get('id', {})
+                    if isinstance(effect_id_data, dict):
+                        effect_id = effect_id_data.get(edition, '')
+                    else:
+                        effect_id = effect_id_data
+                    
+                    # エフェクトIDがNoneの場合はスキップ
+                    if effect_id is None:
+                        continue
+                    
+                    cmd_copy['cmd'] = cmd_template.replace('{effect_id}', effect_id)
+                    cmd_copy['effect_name'] = matched_effect.get('name', '')
+                    cmd_copy['matched_effect_key'] = effect_key
+                    
+                    desc = cmd_copy.get('desc', '')
+                    if '{effect}' in desc:
+                        cmd_copy['desc'] = desc.replace('{effect}', matched_effect.get('name', ''))
+                else:
+                    cmd_copy['cmd'] = cmd_template
+            
             else:
                 cmd_copy['cmd'] = cmd_template
             
@@ -625,77 +700,6 @@ def search_commands(query, edition):
             results.append(cmd_copy)
     
     return results
-
-# ========== ページ設定 ==========
-st.set_page_config(
-    page_title="Minecraftコマンド生成ツール",
-    page_icon="⛏️",
-    layout="centered",
-)
-
-# CSSスタイル
-st.markdown("""
-<style>
-[data-testid="stSidebar"] {
-    position: fixed !important;
-    top: 0;
-    left: 0;
-    width: 280px !important;
-    height: 100vh !important;
-    background-color: #e8f5e9 !important;
-    border-right: 1px solid #e0e0e0;
-    padding: 0 !important;
-    margin: 0 !important;
-    z-index: 1000000;
-    overflow: hidden;
-    border-radius: 0px 30px 30px 0;
-}
-
-[data-testid="stSidebarUserContent"] {
-    padding-top: 3rem !important;
-    margin-top: 0 !important;
-}
-
-[data-testid="stSidebarContent"] {
-    overflow-y: auto !important;
-    height: 100vh !important;
-    padding: 0 1rem 1rem 1rem !important;
-    margin: 0 !important;
-}
-
-.main {
-    margin-left: 280px !important;
-}
-
-.block-container {
-    max-width: 1200px !important;
-    padding-top: 2rem !important;
-}
-
-.stButton button {
-    width: 100%;
-    border-radius: 8px;
-    font-weight: 500;
-}
-
-@media (max-width: 900px) {
-    [data-testid="stSidebar"] {
-        position: relative !important;
-        width: 100% !important;
-        height: auto !important;
-        border-right: none !important;
-    }
-    .main {
-        margin-left: 0 !important;
-    }
-    .block-container {
-        max-width: 100% !important;
-        padding: 1rem !important;
-    }
-}
-</style>
-""", unsafe_allow_html=True)
-
 # ========== セッション状態の初期化 ==========
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
@@ -1108,7 +1112,78 @@ elif menu == "🛠 コマンド生成":
                 - ✅ 柔軟な解釈
                 - ✅ データベース不要
                 """)
-
+# ========== エフェクト図鑑画面 ==========
+elif menu == "✨ エフェクト図鑑":
+    st.header("✨ エフェクト図鑑")
+    
+    if not EFFECTS:
+        st.error("❌ エフェクトデータが読み込まれていません")
+        st.stop()
+    
+    st.markdown(f"**登録エフェクト数:** {len(EFFECTS)}個")
+    
+    # 検索機能
+    search_query = st.text_input("🔍 エフェクトを検索", placeholder="例: 速度、透明、水中")
+    
+    # カテゴリフィルター
+    if EFFECT_CATEGORIES:
+        selected_category = st.selectbox("カテゴリで絞り込み", ["すべて"] + EFFECT_CATEGORIES)
+    else:
+        selected_category = "すべて"
+    
+    # フィルタリング
+    filtered_effects = {}
+    for key, effect in EFFECTS.items():
+        # カテゴリフィルター
+        if selected_category != "すべて" and effect.get('category', '') != selected_category:
+            continue
+        
+        # 検索クエリフィルター
+        if search_query:
+            query_lower = search_query.lower()
+            name_match = query_lower in effect.get('name', '').lower()
+            desc_match = query_lower in effect.get('desc', '').lower()
+            aliases_match = any(query_lower in alias.lower() for alias in effect.get('aliases', []))
+            
+            if not (name_match or desc_match or aliases_match):
+                continue
+        
+        filtered_effects[key] = effect
+    
+    st.markdown(f"**表示中:** {len(filtered_effects)}個")
+    st.markdown("---")
+    
+    # エフェクト一覧表示
+    if filtered_effects:
+        for effect_key, effect in filtered_effects.items():
+            with st.expander(f"✨ {effect.get('name', effect_key)}"):
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    st.markdown(f"**説明:** {effect.get('desc', '')}")
+                    
+                    effect_id_data = effect.get('id', {})
+                    if isinstance(effect_id_data, dict):
+                        java_id = effect_id_data.get('Java版', 'なし')
+                        bedrock_id = effect_id_data.get('統合版', 'なし')
+                        st.markdown(f"**Java版ID:** `{java_id}`")
+                        st.markdown(f"**統合版ID:** `{bedrock_id}`")
+                    else:
+                        st.markdown(f"**ID:** `{effect_id_data}`")
+                    
+                    aliases = effect.get('aliases', [])
+                    if aliases:
+                        st.markdown(f"**別名:** {', '.join(aliases)}")
+                
+                with col2:
+                    st.markdown(f"**カテゴリ:** {effect.get('category', 'その他')}")
+                    
+                    # コマンド例
+                    current_id = effect_id_data.get(st.session_state.edition, '') if isinstance(effect_id_data, dict) else effect_id_data
+                    if current_id:
+                        st.code(f"/effect @s {current_id} 60 1", language="bash")
+    else:
+        st.info("該当するエフェクトが見つかりませんでした")
 # ========== 設定画面 ==========
 elif menu == "⚙️ 設定":
     st.header("⚙️ 設定")
