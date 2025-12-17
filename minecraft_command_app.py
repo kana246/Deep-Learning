@@ -591,19 +591,17 @@ def search_commands(query, edition):
     results = []
     query_lower = query.lower()
     
-    # ターゲットセレクターの抽出
     target = '@s'  # デフォルト
-    if '@a' in query_lower or 'みんな' in query_lower or '全員' in query_lower or '全プレイヤー' in query_lower:
+    if '@a' in query_lower or 'みんな' in query_lower or '全員' in query_lower or '全プレイヤー' in query_lower or 'ぜんぷれいやー' in query_lower or '全てのプレイヤー' in query_lower:
         target = '@a'
-    elif '@r' in query_lower or 'ランダム' in query_lower:
+    elif '@r' in query_lower or 'ランダム' in query_lower or 'らんだむ' in query_lower:
         target = '@r'
-    elif '@p' in query_lower or '最も近い' in query_lower:
+    elif '@p' in query_lower or '最も近い' in query_lower or 'もっともちかい' in query_lower or '一番近い' in query_lower:
         target = '@p'
-    elif '@e' in query_lower or 'エンティティ' in query_lower:
+    elif '@e' in query_lower or 'エンティティ' in query_lower or 'えんてぃてぃ' in query_lower or '全てのエンティティ' in query_lower:
         target = '@e'
-    elif '自分' in query_lower or 'me' in query_lower:
+    elif '自分' in query_lower or 'me' in query_lower or 'じぶん' in query_lower:
         target = '@s'
-    
     # 数量の抽出
     import re
     quantity = 1  # デフォルト
