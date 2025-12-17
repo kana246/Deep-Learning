@@ -485,14 +485,19 @@ EFFECTS = {}
 EFFECT_CATEGORIES = []
 COMMANDS = []
 COMMAND_CATEGORIES = []
+MOBS = {}
+MOB_CATEGORIES = []
 
+# 既存のload_status に追加
 load_status = {
     'items': False,
     'effects': False,
     'commands': False,
+    'mobs': False,  # ←追加
     'items_error': '',
     'effects_error': '',
-    'commands_error': ''
+    'commands_error': '',
+    'mobs_error': ''  # ←追加
 }
 
 # item_data.py の読み込み
@@ -542,6 +547,28 @@ try:
         
 except Exception as e:
     load_status['effects_error'] = str(e)
+try:
+    mob_data_path = os.path.join(current_dir, 'mob_data.py')
+    
+    if os.path.exists(mob_data_path):
+        spec = importlib.util.spec_from_file_location("mob_data", mob_data_path)
+        mob_data = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mob_data)
+        
+        mobs_dict = getattr(mob_data, 'mobs', None) or getattr(mob_data, 'MOBS', {})
+        MOBS = mobs_dict
+        
+        if MOBS:
+            MOB_CATEGORIES = list(set([mob.get('category', 'その他') for mob in MOBS.values()]))
+            MOB_CATEGORIES.sort()
+        
+        load_status['mobs'] = True
+        load_status['mobs_count'] = len(MOBS)
+    else:
+        load_status['mobs_error'] = f"ファイルが見つかりません: {mob_data_path}"
+        
+except Exception as e:
+    load_status['mobs_error'] = str(e)
 # command_data.py の読み込み
 try:
     command_data_path = os.path.join(current_dir, 'command_data.py')
@@ -579,7 +606,7 @@ try:
         
 except Exception as e:
     load_status['commands_error'] = str(e)
-
+# ========== コマンド検索 ==========
 def search_commands(query, edition):
     """
     ユーザーの入力からコマンドを検索(エフェクト対応+数量+ターゲット)
@@ -735,6 +762,55 @@ def search_commands(query, edition):
                 else:
                     cmd_copy['cmd'] = cmd_template
             
+            # モブIDの置き換え
+            elif '{mob_id}' in str(cmd_template):
+                if MOBS:
+                    matched_mob = None
+                    
+                    # モブ名での検索
+                    for mob_key, mob_data in MOBS.items():
+                        mob_name = mob_data.get('name', '').lower()
+                        if mob_name in query_lower:
+                            matched_mob = mob_data
+                            break
+                    
+                    # エイリアスでの検索
+                    if not matched_mob:
+                        for mob_key, mob_data in MOBS.items():
+                            aliases = mob_data.get('aliases', [])
+                            for alias in aliases:
+                                if alias.lower() in query_lower:
+                                    matched_mob = mob_data
+                                    break
+                            if matched_mob:
+                                break
+                    
+                    # マッチしない場合はデフォルト
+                    if not matched_mob:
+                        matched_mob = list(MOBS.values())[0]
+                    
+                    mob_id_data = matched_mob.get('id', {})
+                    if isinstance(mob_id_data, dict):
+                        mob_id = mob_id_data.get(edition, '')
+                    else:
+                        mob_id = mob_id_data
+                    
+                    # モブIDがNoneの場合はスキップ
+                    if mob_id is None:
+                        continue
+                    
+                    cmd_text = cmd_template.replace('{mob_id}', mob_id)
+                    
+                    cmd_copy['cmd'] = cmd_text
+                    cmd_copy['mob_name'] = matched_mob.get('name', '')
+                    cmd_copy['matched_mob_key'] = mob_key
+                    
+                    desc = cmd_copy.get('desc', '')
+                    if '{mob}' in desc:
+                        cmd_copy['desc'] = desc.replace('{mob}', matched_mob.get('name', ''))
+                else:
+                    cmd_copy['cmd'] = cmd_template
+            
             else:
                 # その他のコマンドもターゲットを反映
                 cmd_text = cmd_template
@@ -781,12 +857,12 @@ menu = st.sidebar.radio(
 )
 
 # データ読み込み状況を表示
-st.sidebar.markdown("---")
 st.sidebar.markdown("### 📊 データ状況")
 st.sidebar.markdown(f"**アイテム:** {len(ITEMS)}個")
+st.sidebar.markdown(f"**エフェクト:** {len(EFFECTS)}個")  # ←追加
+st.sidebar.markdown(f"**モブ:** {len(MOBS)}個")  # ←追加
 st.sidebar.markdown(f"**コマンド:** {len(COMMANDS)}個")
 st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")
-
 # ========== ホーム画面 ==========
 if menu == "🏠 ホーム":
     st.header("🏠 ホームメニュー")
