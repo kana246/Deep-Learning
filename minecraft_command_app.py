@@ -8,13 +8,15 @@ from datetime import datetime
 import time
 import uuid
 
-# Google Sheets API用
 try:
-    import gspread
-    from oauth2client.service_account import ServiceAccountCredentials
-    GSPREAD_AVAILABLE = True
+    from item_data import items
+    from command_data import commands
+    from effect_data import effects  # もしエフェクトを別ファイルにした場合
 except ImportError:
-    GSPREAD_AVAILABLE = False
+    # ファイルが見つからない場合の予備（空の辞書を定義してエラーを防ぐ）
+    items = {}
+    commands = {}
+    effects = {}
 
 # Gemini APIの設定
 GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
