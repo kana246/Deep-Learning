@@ -36,6 +36,20 @@ commands = {
             ]
         },
         "note": "効果IDや強さ、秒数は変更可能です"
+    },
+    "summon": {
+        "name": "召喚",
+        "desc": "{mob}を召喚する",
+        "aliases": [
+            "召喚", "しょうかん", "呼ぶ", "よぶ", "出す", "だす",
+            "スポーン", "spawn", "summon", "出現", "出現させる",
+            "呼び出す", "呼び出し", "生成", "せいせい"
+        ],
+        "template": {
+            "統合版": "/summon {mob_id}",
+            "Java版": "/summon {mob_id}"
+        },
+        "note": "座標を指定する場合は ~ ~ ~ を追加できます"
     }
 }
 def template_requires_item(template: str) -> bool:
