@@ -21,16 +21,18 @@ commands = {
         },
         "note": "アイテムIDは後で選べます"
     },
-# command_data.py の修正
-"effect": {
-    "name": "効果付与",
-    "desc": "プレイヤーに特殊効果を与える",
-    "aliases": ["効果", "エフェクト", "つける", "付与", "バフ", "デバフ"],
-    "template": {
-        "統合版": "/effect @p {effect_id} 60 1",
-        "Java版": "/effect give @p {effect_id} 60 1"
+    # command_data.py の修正
+    "effect": {
+        "name": "効果付与",
+        "desc": "プレイヤーに特殊効果を与える",
+        "aliases": ["効果", "エフェクト", "つける", "付与", "バフ", "デバフ"],
+        "template": {
+            "統合版": "/effect @p {effect_id} 60 1",
+            "Java版": "/effect give @p {effect_id} 60 1"
     },
     "note": "末尾の数字は「秒数」「強さ（レベル）」です。必要に応じて変更してください。"
+}
+    
 }
 def template_requires_item(template: str) -> bool:
     return "{item_id}" in template
