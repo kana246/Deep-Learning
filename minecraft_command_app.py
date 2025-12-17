@@ -583,13 +583,42 @@ except Exception as e:
 # ========== コマンド検索関数 ==========
 def search_commands(query, edition):
     """
-    ユーザーの入力からコマンドを検索(エフェクト対応)
+    ユーザーの入力からコマンドを検索(エフェクト対応+数量+ターゲット)
     """
     if not COMMANDS:
         return []
     
     results = []
     query_lower = query.lower()
+    
+    # ターゲットセレクターの抽出
+    target = '@s'  # デフォルト
+    if '@a' in query_lower or 'みんな' in query_lower or '全員' in query_lower or '全プレイヤー' in query_lower:
+        target = '@a'
+    elif '@r' in query_lower or 'ランダム' in query_lower:
+        target = '@r'
+    elif '@p' in query_lower or '最も近い' in query_lower:
+        target = '@p'
+    elif '@e' in query_lower or 'エンティティ' in query_lower:
+        target = '@e'
+    elif '自分' in query_lower or 'me' in query_lower:
+        target = '@s'
+    
+    # 数量の抽出
+    import re
+    quantity = 1  # デフォルト
+    
+    # 数字を直接検索
+    numbers = re.findall(r'\d+', query)
+    if numbers:
+        quantity = int(numbers[0])
+    # キーワードから数量を判定
+    elif '大量' in query_lower or 'たくさん' in query_lower or 'いっぱい' in query_lower or 'スタック' in query_lower:
+        quantity = 64
+    elif '半スタック' in query_lower:
+        quantity = 32
+    elif '少し' in query_lower or '数個' in query_lower or 'ちょっと' in query_lower:
+        quantity = 5
     
     for cmd in COMMANDS:
         keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
@@ -635,7 +664,20 @@ def search_commands(query, edition):
                     else:
                         item_id = item_id_data
                     
-                    cmd_copy['cmd'] = cmd_template.replace('{item_id}', item_id)
+                    # ターゲットと数量を反映
+                    cmd_text = cmd_template.replace('{item_id}', item_id)
+                    cmd_text = cmd_text.replace('@s', target)
+                    
+                    # 数量を追加(giveコマンドの場合)
+                    if '/give' in cmd_text and item_id:
+                        # 既に数量が含まれていない場合のみ追加
+                        if not re.search(r'\d+\s*$', cmd_text):
+                            cmd_text = f"{cmd_text} {quantity}"
+                        else:
+                            # 既存の数量を置き換え
+                            cmd_text = re.sub(r'\d+\s*$', str(quantity), cmd_text)
+                    
+                    cmd_copy['cmd'] = cmd_text
                     cmd_copy['item_name'] = matched_item.get('name', '')
                     cmd_copy['matched_item_key'] = item_key
                     
@@ -650,14 +692,12 @@ def search_commands(query, edition):
                 if EFFECTS:
                     matched_effect = None
                     
-                    # エフェクト名での検索
                     for effect_key, effect_data in EFFECTS.items():
                         effect_name = effect_data.get('name', '').lower()
                         if effect_name in query_lower:
                             matched_effect = effect_data
                             break
                     
-                    # エイリアスでの検索
                     if not matched_effect:
                         for effect_key, effect_data in EFFECTS.items():
                             aliases = effect_data.get('aliases', [])
@@ -668,7 +708,6 @@ def search_commands(query, edition):
                             if matched_effect:
                                 break
                     
-                    # マッチしない場合はデフォルト
                     if not matched_effect:
                         matched_effect = list(EFFECTS.values())[0]
                     
@@ -678,11 +717,14 @@ def search_commands(query, edition):
                     else:
                         effect_id = effect_id_data
                     
-                    # エフェクトIDがNoneの場合はスキップ
                     if effect_id is None:
                         continue
                     
-                    cmd_copy['cmd'] = cmd_template.replace('{effect_id}', effect_id)
+                    # ターゲットを反映
+                    cmd_text = cmd_template.replace('{effect_id}', effect_id)
+                    cmd_text = cmd_text.replace('@s', target)
+                    
+                    cmd_copy['cmd'] = cmd_text
                     cmd_copy['effect_name'] = matched_effect.get('name', '')
                     cmd_copy['matched_effect_key'] = effect_key
                     
@@ -693,7 +735,11 @@ def search_commands(query, edition):
                     cmd_copy['cmd'] = cmd_template
             
             else:
-                cmd_copy['cmd'] = cmd_template
+                # その他のコマンドもターゲットを反映
+                cmd_text = cmd_template
+                if '@s' in cmd_text:
+                    cmd_text = cmd_text.replace('@s', target)
+                cmd_copy['cmd'] = cmd_text
             
             cmd_copy['cmd_template'] = cmd_template
             
