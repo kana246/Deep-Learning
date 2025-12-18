@@ -657,43 +657,43 @@ def search_commands(query, edition):
                 cmd_template = template
             
           # アイテムIDの置き換え
-if '{item_id}' in str(cmd_template):
-    if ITEMS:
-        matched_item = None
-        best_match_score = 0  # マッチスコアを追加
-        
-        # 完全一致を優先
-        for item_key, item_data in ITEMS.items():
-            item_name = item_data.get('name', '')
-            # 完全一致チェック
-            if item_name == query_lower or query_lower == item_name.lower():
-                matched_item = item_data
-                break
-        
-        # 完全一致がない場合、部分一致を検索(長いものを優先)
-        if not matched_item:
-            for item_key, item_data in ITEMS.items():
-                item_name = item_data.get('name', '').lower()
-                if item_name in query_lower:
-                    match_score = len(item_name)  # マッチした文字列の長さをスコアに
-                    if match_score > best_match_score:
+        if '{item_id}' in str(cmd_template):
+            if ITEMS:
+                matched_item = None
+                best_match_score = 0  # マッチスコアを追加
+                
+                # 完全一致を優先
+                for item_key, item_data in ITEMS.items():
+                    item_name = item_data.get('name', '')
+                    # 完全一致チェック
+                    if item_name == query_lower or query_lower == item_name.lower():
                         matched_item = item_data
-                        best_match_score = match_score
-        
-        # エイリアスでの検索(長いものを優先)
-        if not matched_item:
-            for item_key, item_data in ITEMS.items():
-                aliases = item_data.get('aliases', [])
-                for alias in aliases:
-                    alias_lower = alias.lower()
-                    if alias_lower in query_lower:
-                        match_score = len(alias_lower)
-                        if match_score > best_match_score:
-                            matched_item = item_data
-                            best_match_score = match_score
-            
+                        break
+                
+                # 完全一致がない場合、部分一致を検索(長いものを優先)
+                if not matched_item:
+                    for item_key, item_data in ITEMS.items():
+                        item_name = item_data.get('name', '').lower()
+                        if item_name in query_lower:
+                            match_score = len(item_name)  # マッチした文字列の長さをスコアに
+                            if match_score > best_match_score:
+                                matched_item = item_data
+                                best_match_score = match_score
+                
+                # エイリアスでの検索(長いものを優先)
+                if not matched_item:
+                    for item_key, item_data in ITEMS.items():
+                        aliases = item_data.get('aliases', [])
+                        for alias in aliases:
+                            alias_lower = alias.lower()
+                            if alias_lower in query_lower:
+                                match_score = len(alias_lower)
+                                if match_score > best_match_score:
+                                    matched_item = item_data
+                                    best_match_score = match_score
+                    
             # エフェクトIDの置き換え
-           elif '{effect_id}' in str(cmd_template):
+               elif '{effect_id}' in str(cmd_template):
                 if EFFECTS:
                     matched_effect = None
                     
