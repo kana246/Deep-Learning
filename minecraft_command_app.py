@@ -661,51 +661,54 @@ def search_commands(query, edition):
                 if ITEMS:
                     matched_item = None
                     
-                    # 優先度1: 完全一致（名前）
                     for item_key, item_data in ITEMS.items():
-                        item_name = item_data.get('name', '')
-                        if item_name == query_lower or item_name.lower() == query_lower:
+                        item_name = item_data.get('name', '').lower()
+                        if item_name in query_lower:
                             matched_item = item_data
                             break
                     
-                    # 優先度2: 部分一致（名前） - より長い一致を優先
-                    if not matched_item:
-                        best_match_length = 0
-                        for item_key, item_data in ITEMS.items():
-                            item_name = item_data.get('name', '').lower()
-                            if item_name in query_lower:
-                                match_length = len(item_name)
-                                if match_length > best_match_length:
-                                    matched_item = item_data
-                                    best_match_length = match_length
-                    
-                    # 優先度3: エイリアス完全一致
                     if not matched_item:
                         for item_key, item_data in ITEMS.items():
                             aliases = item_data.get('aliases', [])
                             for alias in aliases:
-                                if alias == query_lower or alias.lower() == query_lower:
+                                if alias.lower() in query_lower:
                                     matched_item = item_data
                                     break
                             if matched_item:
                                 break
                     
-                    # 優先度4: エイリアス部分一致 - より長い一致を優先
-                    if not matched_item:
-                        best_match_length = 0
-                        for item_key, item_data in ITEMS.items():
-                            aliases = item_data.get('aliases', [])
-                            for alias in aliases:
-                                alias_lower = alias.lower()
-                                if alias_lower in query_lower:
-                                    match_length = len(alias_lower)
-                                    if match_length > best_match_length:
-                                        matched_item = item_data
-                                        best_match_length = match_length
-                    
-                    # マッチしない場合はデフォルト
                     if not matched_item:
                         matched_item = list(ITEMS.values())[0]
+                    
+                    item_id_data = matched_item.get('id', {})
+                    if isinstance(item_id_data, dict):
+                        item_id = item_id_data.get(edition, '')
+                    else:
+                        item_id = item_id_data
+                    
+                    # ターゲットと数量を反映
+                    cmd_text = cmd_template.replace('{item_id}', item_id)
+                    cmd_text = cmd_text.replace('@s', target)
+                    
+                    # 数量を追加(giveコマンドの場合)
+                    if '/give' in cmd_text and item_id:
+                        # 既に数量が含まれていない場合のみ追加
+                        if not re.search(r'\d+\s*$', cmd_text):
+                            cmd_text = f"{cmd_text} {quantity}"
+                        else:
+                            # 既存の数量を置き換え
+                            cmd_text = re.sub(r'\d+\s*$', str(quantity), cmd_text)
+                    
+                    cmd_copy['cmd'] = cmd_text
+                    cmd_copy['item_name'] = matched_item.get('name', '')
+                    cmd_copy['matched_item_key'] = item_key
+                    
+                    desc = cmd_copy.get('desc', '')
+                    if '{item}' in desc:
+                        cmd_copy['desc'] = desc.replace('{item}', matched_item.get('name', ''))
+                else:
+                    cmd_copy['cmd'] = cmd_template
+            
             # エフェクトIDの置き換え
             elif '{effect_id}' in str(cmd_template):
                 if EFFECTS:
