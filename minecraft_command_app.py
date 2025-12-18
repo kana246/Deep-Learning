@@ -446,17 +446,20 @@ COMMANDS = []
 COMMAND_CATEGORIES = []
 MOBS = {}
 MOB_CATEGORIES = []
+STRUCTURES = {}
+STRUCTURE_CATEGORIES = []
 
-# 既存のload_status に追加
 load_status = {
     'items': False,
     'effects': False,
     'commands': False,
-    'mobs': False,  # ←追加
+    'mobs': False,
+    'structures': False,  # ←追加
     'items_error': '',
     'effects_error': '',
     'commands_error': '',
-    'mobs_error': ''  # ←追加
+    'mobs_error': '',
+    'structures_error': ''  # ←追加
 }
 
 # item_data.py の読み込み
@@ -528,6 +531,29 @@ try:
         
 except Exception as e:
     load_status['mobs_error'] = str(e)
+# structure_data.py の読み込み
+try:
+    structure_data_path = os.path.join(current_dir, 'structure_data.py')
+    
+    if os.path.exists(structure_data_path):
+        spec = importlib.util.spec_from_file_location("structure_data", structure_data_path)
+        structure_data = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(structure_data)
+        
+        structures_dict = getattr(structure_data, 'structures', None) or getattr(structure_data, 'STRUCTURES', {})
+        STRUCTURES = structures_dict
+        
+        if STRUCTURES:
+            STRUCTURE_CATEGORIES = list(set([s.get('category', 'その他') for s in STRUCTURES.values()]))
+            STRUCTURE_CATEGORIES.sort()
+        
+        load_status['structures'] = True
+        load_status['structures_count'] = len(STRUCTURES)
+    else:
+        load_status['structures_error'] = f"ファイルが見つかりません: {structure_data_path}"
+        
+except Exception as e:
+    load_status['structures_error'] = str(e)
 # command_data.py の読み込み
 try:
     command_data_path = os.path.join(current_dir, 'command_data.py')
