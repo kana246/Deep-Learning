@@ -693,7 +693,7 @@ if '{item_id}' in str(cmd_template):
                             best_match_score = match_score
             
             # エフェクトIDの置き換え
-            elif '{effect_id}' in str(cmd_template):
+           elif '{effect_id}' in str(cmd_template):
                 if EFFECTS:
                     matched_effect = None
                     
