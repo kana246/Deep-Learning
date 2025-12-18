@@ -656,44 +656,62 @@ def search_commands(query, edition):
             else:
                 cmd_template = template
             
-          # アイテムIDの置き換え
-                if '{item_id}' in str(cmd_template):
-                    if ITEMS:
-                        matched_item = None
-                        best_match_score = 0  # マッチスコアを追加
-                        
-                        # 完全一致を優先
-                        for item_key, item_data in ITEMS.items():
-                            item_name = item_data.get('name', '')
-                            # 完全一致チェック
-                            if item_name == query_lower or query_lower == item_name.lower():
-                                matched_item = item_data
-                                break
-                        
-                        # 完全一致がない場合、部分一致を検索(長いものを優先)
-                        if not matched_item:
-                            for item_key, item_data in ITEMS.items():
-                                item_name = item_data.get('name', '').lower()
-                                if item_name in query_lower:
-                                    match_score = len(item_name)  # マッチした文字列の長さをスコアに
-                                    if match_score > best_match_score:
-                                        matched_item = item_data
-                                        best_match_score = match_score
-                        
-                        # エイリアスでの検索(長いものを優先)
-                        if not matched_item:
-                            for item_key, item_data in ITEMS.items():
-                                aliases = item_data.get('aliases', [])
-                                for alias in aliases:
-                                    alias_lower = alias.lower()
-                                    if alias_lower in query_lower:
-                                        match_score = len(alias_lower)
-                                        if match_score > best_match_score:
-                                            matched_item = item_data
-                                            best_match_score = match_score
+                       # アイテムIDの置き換え
+            if '{item_id}' in str(cmd_template):
+                if ITEMS:
+                    matched_item = None
                     
+                    for item_key, item_data in ITEMS.items():
+                        item_name = item_data.get('name', '').lower()
+                        if item_name in query_lower:
+                            matched_item = item_data
+                            break
+                    
+                    if not matched_item:
+                        for item_key, item_data in ITEMS.items():
+                            aliases = item_data.get('aliases', [])
+                            for alias in aliases:
+                                if alias.lower() in query_lower:
+                                    matched_item = item_data
+                                    break
+                            if matched_item:
+                                break
+                    
+                    if not matched_item:
+                        matched_item = list(ITEMS.values())[0]
+                    
+                    item_id_data = matched_item.get('id', {})
+                    if isinstance(item_id_data, dict):
+                        item_id = item_id_data.get(edition, '')
+                    else:
+                        item_id = item_id_data
+                    
+                    # ターゲットと数量を反映
+                    cmd_text = cmd_template.replace('{item_id}', item_id)
+                    cmd_text = cmd_text.replace('{target}', target)
+                    cmd_text = cmd_text.replace('@s', target)
+                    
+                    # 数量を追加(giveコマンドの場合)
+                    if '/give' in cmd_text and item_id:
+                        # 既に数量が含まれていない場合のみ追加
+                        if not re.search(r'\d+\s*$', cmd_text):
+                            cmd_text = f"{cmd_text} {quantity}"
+                        else:
+                            # 既存の数量を置き換え
+                            cmd_text = re.sub(r'\d+\s*$', str(quantity), cmd_text)
+                    
+                    cmd_copy['cmd'] = cmd_text
+                    cmd_copy['item_name'] = matched_item.get('name', '')
+                    cmd_copy['matched_item_key'] = item_key
+                    
+                    desc = cmd_copy.get('desc', '')
+                    if '{item}' in desc:
+                        cmd_copy['desc'] = desc.replace('{item}', matched_item.get('name', ''))
+                else:
+                    cmd_copy['cmd'] = cmd_template
+            
             # エフェクトIDの置き換え
-               elif '{effect_id}' in str(cmd_template):
+            elif '{effect_id}' in str(cmd_template):
                 if EFFECTS:
                     matched_effect = None
                     
@@ -739,7 +757,6 @@ def search_commands(query, edition):
                         cmd_copy['desc'] = desc.replace('{effect}', matched_effect.get('name', ''))
                 else:
                     cmd_copy['cmd'] = cmd_template
-            
             # モブIDの置き換え
             elif '{mob_id}' in str(cmd_template):
                 if MOBS:
