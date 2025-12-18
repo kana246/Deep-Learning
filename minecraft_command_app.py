@@ -768,12 +768,17 @@ def search_commands(query, edition):
                     cmd_copy['cmd'] = cmd_template
             
             else:
-                # その他のコマンドもターゲットを反映
+                # その他のコマンド(簡単なコマンドやプレースホルダーなし)
                 cmd_text = cmd_template
+                
+                # {target}プレースホルダーがある場合は置き換え
                 if '{target}' in cmd_text:
                     cmd_text = cmd_text.replace('{target}', target)
+                
+                # @sがある場合も置き換え
                 if '@s' in cmd_text:
                     cmd_text = cmd_text.replace('@s', target)
+                
                 cmd_copy['cmd'] = cmd_text
             
             cmd_copy['cmd_template'] = cmd_template
@@ -781,24 +786,6 @@ def search_commands(query, edition):
             results.append(cmd_copy)
     
     return results
-# ========== セッション状態の初期化 ==========
-if 'page' not in st.session_state:
-    st.session_state.page = 'home'
-if 'edition' not in st.session_state:
-    st.session_state.edition = '統合版'
-if 'selected_command' not in st.session_state:
-    st.session_state.selected_command = None
-if 'user_input' not in st.session_state:
-    st.session_state.user_input = ''
-if 'generation_mode' not in st.session_state:
-    st.session_state.generation_mode = 'both'
-if 'enable_logging' not in st.session_state:
-    st.session_state.enable_logging = True
-if 'session_id' not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
-if 'last_generation_id' not in st.session_state:
-    st.session_state.last_generation_id = None
-
 # ========== メイン画面 ==========
 st.title("⛏️ Minecraftコマンド生成ツール")
 st.markdown("---")
