@@ -786,27 +786,7 @@ def search_commands(query, edition):
             results.append(cmd_copy)
     
     return results
-# ========== メイン画面 ==========
-st.title("⛏️ Minecraftコマンド生成ツール")
-st.markdown("---")
-
-# サイドバーメニュー
-st.sidebar.markdown("### 🎮 メニュー")
-menu = st.sidebar.radio(
-    "機能選択",
-    ["🏠 ホーム", "🛠 コマンド生成", "📘 アイテム図鑑", "🧾 コマンド図鑑", "⚙️ 設定"],
-    key="main_menu",
-    label_visibility="collapsed"
-)
-
-# データ読み込み状況を表示
-st.sidebar.markdown("### 📊 データ状況")
-st.sidebar.markdown(f"**アイテム:** {len(ITEMS)}個")
-st.sidebar.markdown(f"**エフェクト:** {len(EFFECTS)}個")  # ←追加
-st.sidebar.markdown(f"**モブ:** {len(MOBS)}個")  # ←追加
-st.sidebar.markdown(f"**コマンド:** {len(COMMANDS)}個")
-st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")
-# ========== セッションステートの初期化 ========== (この部分を先に)
+    # ========== セッションステートの初期化 ========== (この部分を先に)
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
 if 'edition' not in st.session_state:
@@ -822,7 +802,28 @@ if 'enable_logging' not in st.session_state:
 if 'session_id' not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if 'last_generation_id' not in st.session_state:
-    st.session_state.last_generation_id = None
+    st.session_state.last_generation_id = 
+# ========== メイン画面 ========== (この後に)
+st.title("⛏️ Minecraftコマンド生成ツール")
+st.markdown("---")
+
+# サイドバーメニュー
+st.sidebar.markdown("### 🎮 メニュー")
+menu = st.sidebar.radio(
+    "機能選択",
+    ["🏠 ホーム", "🛠 コマンド生成", "📘 アイテム図鑑", "🧾 コマンド図鑑", "⚙️ 設定"],
+    key="main_menu",
+    label_visibility="collapsed"
+)
+
+# データ読み込み状況を表示
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📊 データ状況")
+st.sidebar.markdown(f"**アイテム:** {len(ITEMS)}個")
+st.sidebar.markdown(f"**モブ:** {len(MOBS)}個")  # ← MOBSを定義している場合
+st.sidebar.markdown(f"**コマンド:** {len(COMMANDS)}個")
+st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")  # ← これでエラーが出なくなる
+None
 # ========== ホーム画面 ==========
 if menu == "🏠 ホーム":
     st.header("🏠 ホームメニュー")
