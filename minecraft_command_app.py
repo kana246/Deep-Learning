@@ -802,7 +802,7 @@ if 'enable_logging' not in st.session_state:
 if 'session_id' not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if 'last_generation_id' not in st.session_state:
-    st.session_state.last_generation_id = 
+st.session_state.last_generation_id = None
 # ========== メイン画面 ========== (この後に)
 st.title("⛏️ Minecraftコマンド生成ツール")
 st.markdown("---")
@@ -823,7 +823,6 @@ st.sidebar.markdown(f"**アイテム:** {len(ITEMS)}個")
 st.sidebar.markdown(f"**モブ:** {len(MOBS)}個")  # ← MOBSを定義している場合
 st.sidebar.markdown(f"**コマンド:** {len(COMMANDS)}個")
 st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")  # ← これでエラーが出なくなる
-None
 # ========== ホーム画面 ==========
 if menu == "🏠 ホーム":
     st.header("🏠 ホームメニュー")
