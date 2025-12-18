@@ -806,6 +806,23 @@ st.sidebar.markdown(f"**エフェクト:** {len(EFFECTS)}個")  # ←追加
 st.sidebar.markdown(f"**モブ:** {len(MOBS)}個")  # ←追加
 st.sidebar.markdown(f"**コマンド:** {len(COMMANDS)}個")
 st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")
+# ========== セッションステートの初期化 ========== (この部分を先に)
+if 'page' not in st.session_state:
+    st.session_state.page = 'home'
+if 'edition' not in st.session_state:
+    st.session_state.edition = '統合版'
+if 'selected_command' not in st.session_state:
+    st.session_state.selected_command = None
+if 'user_input' not in st.session_state:
+    st.session_state.user_input = ''
+if 'generation_mode' not in st.session_state:
+    st.session_state.generation_mode = 'both'
+if 'enable_logging' not in st.session_state:
+    st.session_state.enable_logging = True
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+if 'last_generation_id' not in st.session_state:
+    st.session_state.last_generation_id = None
 # ========== ホーム画面 ==========
 if menu == "🏠 ホーム":
     st.header("🏠 ホームメニュー")
