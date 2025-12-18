@@ -605,6 +605,19 @@ def search_commands(query, edition):
     elif '少し' in query_lower or '数個' in query_lower or 'ちょっと' in query_lower:
         quantity = 5
     
+    # 座標の抽出(テレポートコマンド用)
+    coordinates = None
+    # パターン1: "x y z" の形式 (例: "1 -60 1", "100 64 -200")
+    coord_match = re.search(r'(-?\d+)\s+(-?\d+)\s+(-?\d+)', query)
+    if coord_match:
+        coordinates = f"{coord_match.group(1)} {coord_match.group(2)} {coord_match.group(3)}"
+    # パターン2: "x座標 y座標 z座標" のような表現
+    elif 'へ' in query_lower or 'に' in query_lower:
+        # 数字3つを抽出
+        nums = re.findall(r'-?\d+', query)
+        if len(nums) >= 3:
+            coordinates = f"{nums[0]} {nums[1]} {nums[2]}"
+    
     for cmd in COMMANDS:
         keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
         if any(keyword.lower() in query_lower for keyword in keywords):
@@ -781,6 +794,10 @@ def search_commands(query, edition):
                 # @sがある場合も置き換え
                 if '@s' in cmd_text:
                     cmd_text = cmd_text.replace('@s', target)
+                
+                # 座標プレースホルダー(~ ~ ~)がある場合は置き換え
+                if coordinates and '~ ~ ~' in cmd_text:
+                    cmd_text = cmd_text.replace('~ ~ ~', coordinates)
                 
                 cmd_copy['cmd'] = cmd_text
             
