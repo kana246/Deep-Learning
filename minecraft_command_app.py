@@ -802,7 +802,7 @@ if 'enable_logging' not in st.session_state:
 if 'session_id' not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if 'last_generation_id' not in st.session_state:
-st.session_state.last_generation_id = None
+    st.session_state.last_generation_id = None
 # ========== メイン画面 ========== (この後に)
 st.title("⛏️ Minecraftコマンド生成ツール")
 st.markdown("---")
