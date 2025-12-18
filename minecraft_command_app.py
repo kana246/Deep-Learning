@@ -656,7 +656,7 @@ def search_commands(query, edition):
             else:
                 cmd_template = template
             
-            # アイテムIDの置き換え
+                       # アイテムIDの置き換え
             if '{item_id}' in str(cmd_template):
                 if ITEMS:
                     matched_item = None
@@ -688,6 +688,7 @@ def search_commands(query, edition):
                     
                     # ターゲットと数量を反映
                     cmd_text = cmd_template.replace('{item_id}', item_id)
+                    cmd_text = cmd_text.replace('{target}', target)
                     cmd_text = cmd_text.replace('@s', target)
                     
                     # 数量を追加(giveコマンドの場合)
