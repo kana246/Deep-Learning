@@ -315,6 +315,19 @@ commands = {
             "Java版": "/experience add {target} 100"
         },
         "note": "数値を変更して経験値量を調整できます"
+    },
+    "locate": {
+        "name": "構造物の位置を探す",
+        "desc": "{structure}の座標を探す",
+        "aliases": [
+            "locate", "探す", "さがす", "検索", "けんさく", "位置",
+            "いち", "座標", "ざひょう", "場所", "ばしょ", "どこ"
+        ],
+        "template": {
+            "統合版": "/locate structure {structure_id}",
+            "Java版": "/locate structure {structure_id}"
+        },
+        "note": "最も近い構造物の座標を表示します"
     }
 }
 def template_requires_item(template: str) -> bool:
