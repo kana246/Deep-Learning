@@ -534,6 +534,8 @@ def search_commands(query, edition):
     """
     ユーザーの入力からコマンドを検索(エフェクト対応+数量+ターゲット)
     """
+    global ITEMS, EFFECTS, MOBS, STRUCTURES, COMMANDS
+    
     if not COMMANDS:
         return []
     
@@ -744,6 +746,55 @@ def search_commands(query, edition):
                     desc = cmd_copy.get('desc', '')
                     if '{mob}' in desc:
                         cmd_copy['desc'] = desc.replace('{mob}', matched_mob.get('name', ''))
+                else:
+                    cmd_copy['cmd'] = cmd_template
+            
+            # 構造物IDの置き換え
+            elif '{structure_id}' in str(cmd_template):
+                if STRUCTURES:
+                    matched_structure = None
+                    
+                    # 構造物名での検索
+                    for structure_key, structure_data in STRUCTURES.items():
+                        structure_name = structure_data.get('name', '').lower()
+                        if structure_name in query_lower:
+                            matched_structure = structure_data
+                            break
+                    
+                    # エイリアスでの検索
+                    if not matched_structure:
+                        for structure_key, structure_data in STRUCTURES.items():
+                            aliases = structure_data.get('aliases', [])
+                            for alias in aliases:
+                                if alias.lower() in query_lower:
+                                    matched_structure = structure_data
+                                    break
+                            if matched_structure:
+                                break
+                    
+                    # マッチしない場合はデフォルト
+                    if not matched_structure:
+                        matched_structure = list(STRUCTURES.values())[0]
+                    
+                    structure_id_data = matched_structure.get('id', {})
+                    if isinstance(structure_id_data, dict):
+                        structure_id = structure_id_data.get(edition, '')
+                    else:
+                        structure_id = structure_id_data
+                    
+                    # 構造物IDがNoneの場合はスキップ
+                    if structure_id is None:
+                        continue
+                    
+                    cmd_text = cmd_template.replace('{structure_id}', structure_id)
+                    
+                    cmd_copy['cmd'] = cmd_text
+                    cmd_copy['structure_name'] = matched_structure.get('name', '')
+                    cmd_copy['matched_structure_key'] = structure_key
+                    
+                    desc = cmd_copy.get('desc', '')
+                    if '{structure}' in desc:
+                        cmd_copy['desc'] = desc.replace('{structure}', matched_structure.get('name', ''))
                 else:
                     cmd_copy['cmd'] = cmd_template
             
