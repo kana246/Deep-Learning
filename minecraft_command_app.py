@@ -437,7 +437,7 @@ async def generate_command_directly(user_input, edition):
     
     return None, None
 
-# ========== データ読み込み ==========
+# データ読み込み部分
 current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
 files_in_dir = os.listdir(current_dir)
 
@@ -445,26 +445,25 @@ ITEMS = {}
 ITEM_CATEGORIES = []
 EFFECTS = {}
 EFFECT_CATEGORIES = []
-COMMANDS = []
-COMMAND_CATEGORIES = []
 MOBS = {}
 MOB_CATEGORIES = []
-STRUCTURES = {}
-STRUCTURE_CATEGORIES = []
+STRUCTURES = {}  # ←この行を追加
+STRUCTURE_CATEGORIES = []  # ←この行を追加
+COMMANDS = []
+COMMAND_CATEGORIES = []
 
 load_status = {
     'items': False,
     'effects': False,
     'commands': False,
     'mobs': False,
-    'structures': False,  # ←追加
+    'structures': False,  # ←この行を追加
     'items_error': '',
     'effects_error': '',
     'commands_error': '',
     'mobs_error': '',
-    'structures_error': ''  # ←追加
+    'structures_error': ''  # ←この行を追加
 }
-
 # item_data.py の読み込み
 try:
     item_data_path = os.path.join(current_dir, 'item_data.py')
