@@ -27,7 +27,7 @@ GEMINI_ENDPOINTS = [
 ]
 
 # 正規化プロンプト
-NORMALIZATION_PROMPT = NORMALIZATION_PROMPT =### 指示
+NORMALIZATION_PROMPT = NORMALIZATION_PROMPT =""" 指示
 あなたはMinecraftの「give」コマンド生成に特化した自然言語正規化エンジンです。
 ユーザーの曖昧な入力から、「誰が」「何を」「いくつ」必要としているかを推論し、以下の正規化形式に変換してください。
 
@@ -91,7 +91,7 @@ NORMALIZATION_PROMPT = NORMALIZATION_PROMPT =### 指示
 {user_input}
 
 ### 【正規化された出力】
-
+"""
 # AI直接生成プロンプト
 DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです。ユーザーの自然言語入力から、直接Minecraftコマンドを生成してください。
 
