@@ -489,17 +489,23 @@ try:
         
 except Exception as e:
     load_status['commands_error'] = str(e)
-# ========== コマンド検索 ==========
+# ========== コマンド検索 ==========    
 def search_commands(query, edition):
     """
     ユーザーの入力からgiveコマンドのみを検索
     """
     global ITEMS, EFFECTS, MOBS, STRUCTURES, COMMANDS
     
-    # giveコマンド以外のキーワードチェック
+    if not COMMANDS:
+        return []
+    
+    results = []
+    query_lower = query.lower()  # ← この行を先に定義
+    
+    # giveコマンド以外のキーワードチェック（この行より下に移動）
     non_give_keywords = ['エフェクト', '効果', 'テレポート', '移動', '天候', '時間', 'モブ', '召喚']
     if any(kw in query_lower for kw in non_give_keywords):
-        return []  # ← 空リストを返す（resultsではなく[]）
+        return []
     # ターゲットセレクターの抽出
     target = '@s'  # デフォルト
     if '@a' in query_lower or 'みんな' in query_lower or '全員' in query_lower or '全プレイヤー' in query_lower or 'ぜんぷれいやー' in query_lower or '全てのプレイヤー' in query_lower:
