@@ -81,7 +81,8 @@ NORMALIZATION_PROMPT = """指示
 - 木/ウッド → オークの原木
 - 土/泥 → 土
 - 砂 → 砂
-
+### 【対象外の要求】
+giveコマンド以外（エフェクト付与、テレポート、天候変更、モブ召喚など）は「対象外」と出力
 ### 【推論の優先順位】
 1. 具体的なアイテム名がある場合はそれを優先。
 2. 「〜したい」「〜がない」という表現から、それを解決する最も強力/一般的なアイテムを選択。
@@ -93,20 +94,12 @@ NORMALIZATION_PROMPT = """指示
 ### 【正規化された出力】
 """
 # AI直接生成プロンプト
-DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです。ユーザーの自然言語入力から、直接Minecraftコマンドを生成してください。
+DIRECT_GENERATION_PROMPT = """あなたはMinecraftのgiveコマンド生成専用AIです。giveコマンドのみを生成してください。
 
 【重要ルール】
-- コマンドのみを出力（説明文や前置きは不要）
-- 複数コマンドの場合は改行で区切る
-
-【エディション】
-現在のエディション: {edition}
-※統合版の場合は統合版のコマンド形式を、Java版の場合はJava版の形式を使用
-
-【入力】
-{user_input}
-
-【生成されたコマンド】"""
+- **giveコマンドのみ**を出力（/give @s <item_id> <amount>）
+- giveコマンド以外の要求は「このツールはgiveコマンド専用です」と返答
+"""
 
 # ========== 研究用データ記録関数（拡張版） ==========
 def log_research_data(
@@ -499,15 +492,17 @@ except Exception as e:
 # ========== コマンド検索 ==========
 def search_commands(query, edition):
     """
-    ユーザーの入力からコマンドを検索(エフェクト対応+数量+ターゲット)
+    ユーザーの入力からgiveコマンドのみを検索
     """
     global ITEMS, EFFECTS, MOBS, STRUCTURES, COMMANDS
     
-    if not COMMANDS:
+    # giveコマンド以外のキーワードチェック
+    non_give_keywords = ['エフェクト', '効果', 'テレポート', '移動', '天候', '時間', 'モブ', '召喚']
+    if any(kw in query.lower() for kw in non_give_keywords):
         return []
     
-    results = []
-    query_lower = query.lower()
+    if not COMMANDS:
+        return []
     
     # ターゲットセレクターの抽出
     target = '@s'  # デフォルト
@@ -557,7 +552,9 @@ def search_commands(query, edition):
             cmd_copy = cmd.copy()
             
             template = cmd_copy.get('template', {})
-            
+            # giveコマンドのみに絞り込み
+        COMMANDS = [cmd for cmd in COMMANDS if 'give' in cmd.get('key', '').lower() or 
+                    'give' in str(cmd.get('template', '')).lower()]
             if isinstance(template, dict):
                 cmd_template = template.get(edition, '')
                 if isinstance(cmd_template, list):
@@ -812,7 +809,7 @@ st.markdown("---")
 st.sidebar.markdown("### 🎮 メニュー")
 menu = st.sidebar.radio(
     "機能選択",
-    ["🏠 ホーム", "🛠 コマンド生成", "📘 アイテム図鑑", "🧾 コマンド図鑑", "⚙️ 設定"],
+    ["🏠 ホーム", "🛠 コマンド生成", "📘 アイテム図鑑", "⚙️ 設定"],
     key="main_menu",
     label_visibility="collapsed"
 )
@@ -847,7 +844,6 @@ if menu == "🏠 ホーム":
         st.markdown("""
         - 🛠 **コマンド生成**: 日本語でやりたいことを入力
         - 📘 **アイテム図鑑**: アイテム一覧と検索
-        - 🧾 **コマンド図鑑**: よく使うコマンド集
         - ⚙️ **設定**: バージョン選択など
         """)
     
@@ -939,7 +935,7 @@ elif menu == "🛠 コマンド生成":
     user_input = st.text_area(
         "入力例",
         value=st.session_state.user_input,
-        placeholder="例:\n- パンが欲しい\n- 足を速くしたい\n- ダイヤのツルハシちょうだい\n- みんなに松明を大量に配る",
+        placeholder="placeholder="例:\n- パンが欲しい\n- ダイヤのツルハシちょうだい\n- みんなに松明を大量に配る\n- 自分に金のリンゴを5個",
         height=100,
         key="command_input"
     )
@@ -1198,78 +1194,7 @@ elif menu == "🛠 コマンド生成":
                 - ✅ 柔軟な解釈
                 - ✅ データベース不要
                 """)
-# ========== エフェクト図鑑画面 ==========
-elif menu == "✨ エフェクト図鑑":
-    st.header("✨ エフェクト図鑑")
-    
-    if not EFFECTS:
-        st.error("❌ エフェクトデータが読み込まれていません")
-        st.stop()
-    
-    st.markdown(f"**登録エフェクト数:** {len(EFFECTS)}個")
-    
-    # 検索機能
-    search_query = st.text_input("🔍 エフェクトを検索", placeholder="例: 速度、透明、水中")
-    
-    # カテゴリフィルター
-    if EFFECT_CATEGORIES:
-        selected_category = st.selectbox("カテゴリで絞り込み", ["すべて"] + EFFECT_CATEGORIES)
-    else:
-        selected_category = "すべて"
-    
-    # フィルタリング
-    filtered_effects = {}
-    for key, effect in EFFECTS.items():
-        # カテゴリフィルター
-        if selected_category != "すべて" and effect.get('category', '') != selected_category:
-            continue
-        
-        # 検索クエリフィルター
-        if search_query:
-            query_lower = search_query.lower()
-            name_match = query_lower in effect.get('name', '').lower()
-            desc_match = query_lower in effect.get('desc', '').lower()
-            aliases_match = any(query_lower in alias.lower() for alias in effect.get('aliases', []))
-            
-            if not (name_match or desc_match or aliases_match):
-                continue
-        
-        filtered_effects[key] = effect
-    
-    st.markdown(f"**表示中:** {len(filtered_effects)}個")
-    st.markdown("---")
-    
-    # エフェクト一覧表示
-    if filtered_effects:
-        for effect_key, effect in filtered_effects.items():
-            with st.expander(f"✨ {effect.get('name', effect_key)}"):
-                col1, col2 = st.columns([2, 1])
-                
-                with col1:
-                    st.markdown(f"**説明:** {effect.get('desc', '')}")
-                    
-                    effect_id_data = effect.get('id', {})
-                    if isinstance(effect_id_data, dict):
-                        java_id = effect_id_data.get('Java版', 'なし')
-                        bedrock_id = effect_id_data.get('統合版', 'なし')
-                        st.markdown(f"**Java版ID:** `{java_id}`")
-                        st.markdown(f"**統合版ID:** `{bedrock_id}`")
-                    else:
-                        st.markdown(f"**ID:** `{effect_id_data}`")
-                    
-                    aliases = effect.get('aliases', [])
-                    if aliases:
-                        st.markdown(f"**別名:** {', '.join(aliases)}")
-                
-                with col2:
-                    st.markdown(f"**カテゴリ:** {effect.get('category', 'その他')}")
-                    
-                    # コマンド例
-                    current_id = effect_id_data.get(st.session_state.edition, '') if isinstance(effect_id_data, dict) else effect_id_data
-                    if current_id:
-                        st.code(f"/effect @s {current_id} 60 1", language="bash")
-    else:
-        st.info("該当するエフェクトが見つかりませんでした")
+
 # ========== 設定画面 ==========
 elif menu == "⚙️ 設定":
     st.header("⚙️ 設定")
