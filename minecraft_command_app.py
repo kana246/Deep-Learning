@@ -641,7 +641,7 @@ def search_commands(query, edition):
                     if '{mob}' in desc:
                         cmd_copy['desc'] = desc.replace('{mob}', matched_mob.get('name', ''))
                     else:
-                    cmd_copy['cmd'] = cmd_template
+                        cmd_copy['cmd'] = cmd_template
             
             # 構造物IDの置き換え
             elif '{structure_id}' in str(cmd_template):
