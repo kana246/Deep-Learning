@@ -688,10 +688,10 @@ def search_commands(query, edition):
                     cmd_text = cmd_text.replace('@s', target)
                     
                     if '/give' in cmd_text and item_id:
-                        if not re.search(r'\d+\s*, cmd_text):
+                        if not re.search(r'\d+\s*$', cmd_text):
                             cmd_text = f"{cmd_text} {quantity}"
                         else:
-                            cmd_text = re.sub(r'\d+\s*, str(quantity), cmd_text)
+                            cmd_text = re.sub(r'\d+\s*$', str(quantity), cmd_text)
                     
                     cmd_copy['cmd'] = cmd_text
                     cmd_copy['item_name'] = matched_item.get('name', '')
