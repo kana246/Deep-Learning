@@ -42,7 +42,13 @@ NORMALIZATION_PROMPT = """指示
 - 誰か/ランダム/@r → ランダムなプレイヤー
 - 固有名(Steve等) → そのプレイヤー名
 - 省略時 → 自分
-
+### 【正規化形式】
+[対象]に[アイテム名]を[数量]個与える
+※ 複数の独立した要求がある場合は、改行で区切って出力してください。
+例：
+自分にパンを1個与える
+みんなにダイヤモンドのツルハシを1個与える
+※ 説明や挨拶は一切禁止します。
 ### 【数量の正規化】
 - 1スタック/いっぱい/大量/山ほど → 64個
 - 半スタック/半分くらい → 32個
@@ -929,14 +935,31 @@ elif menu == "🛠 コマンド生成":
                         hybrid_error_log = str(e)
                     
                     # コマンド検索
-                    candidates = search_commands(search_text, st.session_state.edition)
-                    hybrid_time_log = time.time() - hybrid_start
+                    # 正規化結果が複数行の場合は分割して処理
+                    search_lines = normalized.strip().split('\n')
+                    candidates = []
                     
+                    for line in search_lines:
+                        line = line.strip()
+                        if line:  # 空行をスキップ
+                            line_candidates = search_commands(line, st.session_state.edition)
+                            candidates.extend(line_candidates)
+                    
+                    hybrid_time_log = time.time() - hybrid_start
                     # ハイブリッドコマンドを記録
+                                        # ハイブリッドコマンドを記録
                     hybrid_commands_list = []
+                    seen_commands = set()  # 重複チェック用
                     
                     if candidates:
                         for i, cmd in enumerate(candidates):
+                            command_text = cmd.get('cmd', '')
+                            
+                            # 重複をスキップ
+                            if command_text in seen_commands:
+                                continue
+                            seen_commands.add(command_text)
+                            
                             cmd_name = cmd.get('name', cmd.get('desc', 'コマンド'))
                             item_name = cmd.get('item_name', '')
                             
