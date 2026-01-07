@@ -640,7 +640,7 @@ def search_commands(query, edition):
                     desc = cmd_copy.get('desc', '')
                     if '{mob}' in desc:
                         cmd_copy['desc'] = desc.replace('{mob}', matched_mob.get('name', ''))
-                else:
+                    else:
                     cmd_copy['cmd'] = cmd_template
             
             # 構造物IDの置き換え
