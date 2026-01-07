@@ -503,7 +503,8 @@ def search_commands(query, edition):
     
     if not COMMANDS:
         return []
-    
+        results = []
+    query_lower = query.lower()  # ← この行を追加
     # ターゲットセレクターの抽出
     target = '@s'  # デフォルト
     if '@a' in query_lower or 'みんな' in query_lower or '全員' in query_lower or '全プレイヤー' in query_lower or 'ぜんぷれいやー' in query_lower or '全てのプレイヤー' in query_lower:
