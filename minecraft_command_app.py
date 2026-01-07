@@ -498,13 +498,8 @@ def search_commands(query, edition):
     
     # giveコマンド以外のキーワードチェック
     non_give_keywords = ['エフェクト', '効果', 'テレポート', '移動', '天候', '時間', 'モブ', '召喚']
-    if any(kw in query.lower() for kw in non_give_keywords):
-        return []
-    
-    if not COMMANDS:
-        return []
-        results = []
-    query_lower = query.lower()  # ← この行を追加
+    if any(kw in query_lower for kw in non_give_keywords):
+        return []  # ← 空リストを返す（resultsではなく[]）
     # ターゲットセレクターの抽出
     target = '@s'  # デフォルト
     if '@a' in query_lower or 'みんな' in query_lower or '全員' in query_lower or '全プレイヤー' in query_lower or 'ぜんぷれいやー' in query_lower or '全てのプレイヤー' in query_lower:
