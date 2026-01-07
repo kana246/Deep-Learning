@@ -938,7 +938,7 @@ elif menu == "🛠 コマンド生成":
         placeholder="placeholder="例:\n- パンが欲しい\n- ダイヤのツルハシちょうだい\n- みんなに松明を大量に配る\n- 自分に金のリンゴを5個",
         height=100,
         key="command_input"
-    )
+        )
     
     # 処理ボタン
     generate_btn = st.button("🚀 コマンド生成", type="primary", use_container_width=True)
