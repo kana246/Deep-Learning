@@ -553,7 +553,7 @@ def search_commands(query, edition):
             
             template = cmd_copy.get('template', {})
             # giveコマンドのみに絞り込み
-        COMMANDS = [cmd for cmd in COMMANDS if 'give' in cmd.get('key', '').lower() or 
+            COMMANDS = [cmd for cmd in COMMANDS if 'give' in cmd.get('key', '').lower() or 
                     'give' in str(cmd.get('template', '')).lower()]
             if isinstance(template, dict):
                 cmd_template = template.get(edition, '')
