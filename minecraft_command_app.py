@@ -534,18 +534,6 @@ def search_commands(query, edition):
     elif '少し' in query_lower or '数個' in query_lower or 'ちょっと' in query_lower:
         quantity = 5
     
-    # 座標の抽出(テレポートコマンド用)
-    coordinates = None
-    # パターン1: "x y z" の形式 (例: "1 -60 1", "100 64 -200")
-    coord_match = re.search(r'(-?\d+)\s+(-?\d+)\s+(-?\d+)', query)
-    if coord_match:
-        coordinates = f"{coord_match.group(1)} {coord_match.group(2)} {coord_match.group(3)}"
-    # パターン2: "x座標 y座標 z座標" のような表現
-    elif 'へ' in query_lower or 'に' in query_lower:
-        # 数字3つを抽出
-        nums = re.findall(r'-?\d+', query)
-        if len(nums) >= 3:
-            coordinates = f"{nums[0]} {nums[1]} {nums[2]}"
     
     for cmd in COMMANDS:
         keywords = cmd.get('keywords', []) or cmd.get('aliases', [])
@@ -617,64 +605,6 @@ def search_commands(query, edition):
                 else:
                     cmd_copy['cmd'] = cmd_template
             
-            # エフェクトIDの置き換え
-            elif '{effect_id}' in str(cmd_template):
-                if EFFECTS:
-                    matched_effect = None
-                    
-                    for effect_key, effect_data in EFFECTS.items():
-                        effect_name = effect_data.get('name', '').lower()
-                        if effect_name in query_lower:
-                            matched_effect = effect_data
-                            break
-                    
-                    if not matched_effect:
-                        for effect_key, effect_data in EFFECTS.items():
-                            aliases = effect_data.get('aliases', [])
-                            for alias in aliases:
-                                if alias.lower() in query_lower:
-                                    matched_effect = effect_data
-                                    break
-                            if matched_effect:
-                                break
-                    
-                    if not matched_effect:
-                        matched_effect = list(EFFECTS.values())[0]
-                    
-                    effect_id_data = matched_effect.get('id', {})
-                    if isinstance(effect_id_data, dict):
-                        effect_id = effect_id_data.get(edition, '')
-                    else:
-                        effect_id = effect_id_data
-                    
-                    if effect_id is None:
-                        continue
-                    
-                    # ターゲットを反映
-                    cmd_text = cmd_template.replace('{effect_id}', effect_id)
-                    cmd_text = cmd_text.replace('{target}', target)
-                    cmd_text = cmd_text.replace('@s', target)
-                    
-                    cmd_copy['cmd'] = cmd_text
-                    cmd_copy['effect_name'] = matched_effect.get('name', '')
-                    cmd_copy['matched_effect_key'] = effect_key
-                    
-                    desc = cmd_copy.get('desc', '')
-                    if '{effect}' in desc:
-                        cmd_copy['desc'] = desc.replace('{effect}', matched_effect.get('name', ''))
-                else:
-                    cmd_copy['cmd'] = cmd_template
-            # モブIDの置き換え
-            elif '{mob_id}' in str(cmd_template):
-                if MOBS:
-                    matched_mob = None
-                    
-                    # モブ名での検索
-                    for mob_key, mob_data in MOBS.items():
-                        mob_name = mob_data.get('name', '').lower()
-                        if mob_name in query_lower:
-                            matched_mob = mob_data
-                            break
                     
                     # エイリアスでの検索
                     if not matched_mob:
