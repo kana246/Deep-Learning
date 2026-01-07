@@ -1351,11 +1351,668 @@ elif menu == "⚙️ 設定":
         st.markdown("""
         1. [Google AI Studio](https://aistudio.google.com/app/apikey) にアクセス
         2. 「Create API Key」をクリック
-        3. APIキーをコピー（`AIzaSy...`で始まる）
-        4. Streamlit Secretsに追加:
-        ```toml
-        GEMINI_API_KEY = "AIzaSy..."
-        ```
+        3. APIキーをコピー（`AIzaSy...`で始まる）import streamlit as st
+from pathlib import Path
+import sys
+import os
+import importlib.util
+import json
+from datetime import datetime
+import time
+import uuid
+import asyncio
+
+# Google Sheets API用
+try:
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+    GSPREAD_AVAILABLE = True
+except ImportError:
+    GSPREAD_AVAILABLE = False
+
+# Gemini APIの設定
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", None) if hasattr(st, 'secrets') else os.getenv("GEMINI_API_KEY")
+GEMINI_ENDPOINTS = [
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+]
+
+# 正規化プロンプト
+NORMALIZATION_PROMPT = """指示
+あなたはMinecraftの「give」コマンド生成に特化した自然言語正規化エンジンです。
+ユーザーの曖昧な入力から、「誰が」「何を」「いくつ」必要としているかを推論し、
+以下の正規化形式に変換してください。
+
+### 【正規化形式】
+[対象]に[アイテム名]を[数量]個与える
+※ 複数の独立した要求がある場合は、改行で区切って出力してください。
+※ 説明や挨拶は一切禁止します。
+
+### 【対象の正規化】
+- 自分/me/@p/私/僕/ここ → 自分
+- みんな/全員/all/@a/全員に → 全対象
+- 誰か/ランダム/@r → ランダムなプレイヤー
+- 固有名(Steve等) → そのプレイヤー名
+- 省略時 → 自分
+
+### 【数量の正規化】
+- 1スタック/いっぱい/大量/山ほど → 64個
+- 半スタック/半分くらい → 32個
+- 少し/ちょっと/数個 → 5個
+- 具体的な数字(10個、1つ等) → その数値
+- 省略時 → 1個
+
+### 【アイテム名の推論・正規化ルール】
+ユーザーの「目的」や「状態」から最適なアイテムを選択してください。
+ただしアイテム名が指定されている場合は指定されたアイテムを出力する
+
+■ 1. 状態・困りごとからの推論
+- お腹がすいた/腹減った/食べ物 → ステーキ
+- 死にそう/体力がやばい/回復したい → 金のリンゴ
+- 暗い/見えない/松明 → 松明
+- 溺れる/息ができない → 水中呼吸のポーション
+- 燃えてる/熱い → 耐火のポーション
+
+■ 2. 目的・作業からの推論
+- 掘りたい/採掘したい/ダイヤ掘る → ダイヤモンドのツルハシ
+- 木を切りたい/伐採 → ダイヤモンドの斧
+- 戦いたい/武器がほしい/敵を倒す → ダイヤモンドの剣
+- 守りを固めたい/防具/装備 → ダイヤモンドのヘルメット、ダイヤモンドのチェストプレート、ダイヤモンドのレギンス、ダイヤモンドのブーツ
+
+■ 3. 素材・通称の変換
+- ダイヤ → ダイヤモンド
+- 金 → 金インゴット
+- 鉄 → 鉄インゴット
+
+### 【対象外の要求】
+giveコマンド以外は「対象外」と出力
+
+### 【入力】
+{user_input}
+
+### 【正規化された出力】
+"""
+
+# AI直接生成プロンプト
+DIRECT_GENERATION_PROMPT = """あなたはMinecraftのコマンド生成AIです。ユーザーの自然言語入力から、直接Minecraftコマンドを生成してください。
+
+【重要ルール】
+- コマンドのみを出力（説明文や前置きは不要）
+- 複数コマンドの場合は改行で区切る
+- **giveコマンドのみ**を出力（/give @s <item_id> <amount>）
+- 入力された分から意図を理解し、ユーザーが欲しい適切なコマンドを出力
+
+【エディション】
+現在のエディション: {edition}
+※統合版の場合は統合版のコマンド形式を、Java版の場合はJava版の形式を使用
+
+【入力】
+{user_input}
+
+【生成されたコマンド】
+"""
+
+# ========== 研究用データ記録関数 ==========
+def log_research_data(
+    user_input,
+    normalized_text,
+    hybrid_commands,
+    ai_direct_commands,
+    edition,
+    hybrid_time=None,
+    ai_time=None,
+    hybrid_error=None,
+    ai_error=None,
+    used_model=None,
+    user_rating=None,
+    preferred_version=None,
+    user_comment=None
+):
+    """研究用の詳細なデータをGoogle Sheetsに記録"""
+    if not st.session_state.enable_logging:
+        return False
+    
+    try:
+        if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
+            credentials_dict = dict(st.secrets["gcp_service_account"])
+        else:
+            return False
+        
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+        credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+        client = gspread.authorize(credentials)
+        
+        spreadsheet_url = st.secrets.get("SPREADSHEET_URL", None)
+        if spreadsheet_url:
+            spreadsheet = client.open_by_url(spreadsheet_url)
+        else:
+            spreadsheet = client.open("Minecraft Command Generation Log")
+        
+        worksheet = spreadsheet.sheet1
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        row_data = [
+            timestamp,
+            st.session_state.session_id,
+            user_input,
+            normalized_text or "",
+            hybrid_commands or "",
+            ai_direct_commands or "",
+            edition,
+            f"{hybrid_time:.2f}" if hybrid_time else "",
+            f"{ai_time:.2f}" if ai_time else "",
+            hybrid_error or "",
+            ai_error or "",
+            used_model or "",
+            str(user_rating) if user_rating else "",
+            preferred_version or "",
+            user_comment or ""
+        ]
+        
+        worksheet.append_row(row_data)
+        return True
+        
+    except Exception as e:
+        st.error(f"Google Sheets記録エラー: {e}")
+        return False
+
+# ========== AI正規化関数 ==========
+async def normalize_with_gemini(user_input):
+    """Gemini APIを使ってユーザー入力を正規化"""
+    if not GEMINI_API_KEY:
+        return None, None
+    
+    import aiohttp
+    
+    for endpoint in GEMINI_ENDPOINTS:
+        try:
+            prompt = NORMALIZATION_PROMPT.replace("{user_input}", user_input)
+            headers = {"Content-Type": "application/json"}
+            
+            data = {
+                "contents": [{
+                    "parts": [{"text": prompt}]
+                }],
+                "generationConfig": {
+                    "temperature": 0.1,
+                    "maxOutputTokens": 500,
+                }
+            }
+            
+            url = f"{endpoint}?key={GEMINI_API_KEY}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        candidates = result.get("candidates", [])
+                        if candidates and len(candidates) > 0:
+                            content = candidates[0].get("content", {})
+                            parts = content.get("parts", [])
+                            if parts and len(parts) > 0:
+                                normalized_text = parts[0].get("text", "").strip()
+                                model_name = endpoint.split('models/')[1].split(':')[0]
+                                return normalized_text, model_name
+                        return None, None
+                    elif response.status == 429:
+                        continue
+                    else:
+                        continue
+        except Exception as e:
+            continue
+    
+    return None, None
+
+# ========== AI直接生成関数 ==========
+async def generate_command_directly(user_input, edition):
+    """AI単体でコマンドを直接生成"""
+    if not GEMINI_API_KEY:
+        return None, None
+    
+    import aiohttp
+    
+    for endpoint in GEMINI_ENDPOINTS:
+        try:
+            prompt = DIRECT_GENERATION_PROMPT.replace("{user_input}", user_input).replace("{edition}", edition)
+            headers = {"Content-Type": "application/json"}
+            
+            data = {
+                "contents": [{
+                    "parts": [{"text": prompt}]
+                }],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 500,
+                }
+            }
+            
+            url = f"{endpoint}?key={GEMINI_API_KEY}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        candidates = result.get("candidates", [])
+                        if candidates and len(candidates) > 0:
+                            content = candidates[0].get("content", {})
+                            parts = content.get("parts", [])
+                            if parts and len(parts) > 0:
+                                generated_commands = parts[0].get("text", "").strip()
+                                model_name = endpoint.split('models/')[1].split(':')[0]
+                                return generated_commands, model_name
+                        return None, None
+                    elif response.status == 429:
+                        continue
+                    else:
+                        continue
+        except Exception as e:
+            continue
+    
+    return None, None
+
+# データ読み込み部分（簡略化）
+current_dir = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
+
+ITEMS = {}
+COMMANDS = []
+
+# 簡易的なダミーデータ（実際は外部ファイルから読み込み）
+try:
+    item_data_path = os.path.join(current_dir, 'item_data.py')
+    if os.path.exists(item_data_path):
+        spec = importlib.util.spec_from_file_location("item_data", item_data_path)
+        item_data = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(item_data)
+        ITEMS = getattr(item_data, 'items', {})
+except:
+    pass
+
+try:
+    command_data_path = os.path.join(current_dir, 'command_data.py')
+    if os.path.exists(command_data_path):
+        spec = importlib.util.spec_from_file_location("command_data", command_data_path)
+        command_data = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(command_data)
+        COMMANDS = getattr(command_data, 'commands', [])
+except:
+    pass
+
+# ========== コマンド検索（簡略版） ==========
+def search_commands(query, edition):
+    """簡易的なコマンド検索"""
+    import re
+    
+    results = []
+    query_lower = query.lower()
+    
+    # ターゲット抽出
+    target = '@s'
+    if 'みんな' in query_lower or '全員' in query_lower:
+        target = '@a'
+    
+    # 数量抽出
+    numbers = re.findall(r'\d+', query)
+    quantity = int(numbers[0]) if numbers else 1
+    
+    if 'スタック' in query_lower or '大量' in query_lower:
+        quantity = 64
+    
+    # アイテム検索
+    for item_key, item_data in ITEMS.items():
+        item_name = item_data.get('name', '').lower()
+        if item_name in query_lower:
+            item_id = item_data.get('id', {}).get(edition, item_key)
+            cmd_text = f"/give {target} {item_id} {quantity}"
+            results.append({
+                'cmd': cmd_text,
+                'name': f"アイテム付与: {item_data.get('name')}",
+                'item_name': item_data.get('name')
+            })
+            break
+    
+    return results
+
+# ========== セッションステート初期化 ==========
+if 'page' not in st.session_state:
+    st.session_state.page = 'home'
+if 'edition' not in st.session_state:
+    st.session_state.edition = '統合版'
+if 'enable_logging' not in st.session_state:
+    st.session_state.enable_logging = True
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+if 'batch_results' not in st.session_state:
+    st.session_state.batch_results = []
+
+# ========== メイン画面 ==========
+st.title("⛏️ Minecraftコマンド生成ツール - 実験版")
+st.markdown("---")
+
+# サイドバーメニュー
+st.sidebar.markdown("### 🎮 メニュー")
+menu = st.sidebar.radio(
+    "機能選択",
+    ["🏠 ホーム", "🛠 コマンド生成", "⚙️ 設定", "🧪 実験モード"],
+    key="main_menu",
+    label_visibility="collapsed"
+)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown(f"**エディション:** {st.session_state.edition}")
+
+# ========== ホーム画面 ==========
+if menu == "🏠 ホーム":
+    st.header("🏠 ホームメニュー")
+    st.success("✅ システム稼働中")
+    
+    st.markdown("""
+    ### 📚 機能一覧
+    - 🛠 **コマンド生成**: 個別テスト
+    - 🧪 **実験モード**: 一括バッチ処理（最大100件）
+    - ⚙️ **設定**: API設定・データ記録
+    """)
+
+# ========== コマンド生成画面 ==========
+elif menu == "🛠 コマンド生成":
+    st.header("🛠 コマンド生成（個別テスト）")
+    
+    user_input = st.text_area(
+        "入力",
+        placeholder="例: パンが欲しい",
+        height=100
+    )
+    
+    if st.button("🚀 生成", type="primary"):
+        if user_input:
+            with st.spinner("処理中..."):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("### ハイブリッド版")
+                    try:
+                        normalized, model = asyncio.run(normalize_with_gemini(user_input))
+                        if normalized:
+                            st.success(f"正規化: {normalized}")
+                            candidates = search_commands(normalized, st.session_state.edition)
+                            for cmd in candidates:
+                                st.code(cmd['cmd'])
+                    except Exception as e:
+                        st.error(f"エラー: {e}")
+                
+                with col2:
+                    st.markdown("### AI単体版")
+                    try:
+                        commands, model = asyncio.run(generate_command_directly(user_input, st.session_state.edition))
+                        if commands:
+                            for cmd in commands.split('\n'):
+                                if cmd.strip():
+                                    st.code(cmd.strip())
+                    except Exception as e:
+                        st.error(f"エラー: {e}")
+
+# ========== 設定画面 ==========
+elif menu == "⚙️ 設定":
+    st.header("⚙️ 設定")
+    
+    edition = st.radio(
+        "エディション",
+        ["統合版", "Java版"],
+        index=0 if st.session_state.edition == "統合版" else 1
+    )
+    st.session_state.edition = edition
+    
+    st.markdown("---")
+    
+    enable_log = st.toggle(
+        "Google Sheetsに自動記録",
+        value=st.session_state.enable_logging
+    )
+    st.session_state.enable_logging = enable_log
+    
+    if GEMINI_API_KEY:
+        st.success("✅ Gemini API: 設定済み")
+    else:
+        st.error("❌ Gemini API: 未設定")
+
+# ========== 🧪 実験モード ==========
+elif menu == "🧪 実験モード":
+    st.header("🧪 実験モード - 一括バッチ処理")
+    
+    st.warning("⚠️ **研究者向け機能**: 最大100件のテストケースを自動実行し、結果を記録します")
+    
+    if not GEMINI_API_KEY:
+        st.error("❌ Gemini APIキーが必要です")
+        st.stop()
+    
+    # テストケース入力
+    st.markdown("### 📋 テストケース")
+    
+    default_cases = """ステーキがほしい
+ステーキをください
+ステーキを10個
+パンがほしい
+パンを8個ください
+焼き鳥がほしい
+焼き鳥を16個
+ベイクドポテトがほしい
+ベイクドポテトを12個
+金のリンゴがほしい
+金のリンゴをください
+金のリンゴを3個
+エンチャントされた金のリンゴがほしい
+ニンジンがほしい
+ニンジンを16個
+ダイヤモンドのツルハシがほしい
+ダイヤモンドの剣を1個
+松明を64個ください
+みんなにパンを配る
+自分に鉄インゴットを32個"""
+    
+    test_cases_text = st.text_area(
+        "テストケース（1行1ケース、最大100件）",
+        value=default_cases,
+        height=400
+    )
+    
+    test_cases = [line.strip() for line in test_cases_text.split('\n') if line.strip()]
+    test_cases = test_cases[:100]  # 最大100件に制限
+    
+    st.info(f"📊 **{len(test_cases)}件** のテストケース")
+    
+    # 実行設定
+    st.markdown("---")
+    st.markdown("### ⚙️ 実行設定")
+    
+    col_set1, col_set2, col_set3 = st.columns(3)
+    
+    with col_set1:
+        delay = st.slider("間隔（秒）", 0.0, 5.0, 1.0, 0.5)
+    
+    with col_set2:
+        auto_log = st.checkbox("自動記録", value=st.session_state.enable_logging)
+    
+    with col_set3:
+        show_detail = st.checkbox("詳細表示", value=False)
+    
+    # 実行ボタン
+    st.markdown("---")
+    
+    col_btn1, col_btn2, col_btn3 = st.columns(3)
+    
+    with col_btn1:
+        start_btn = st.button("🚀 一括実行開始", type="primary", use_container_width=True)
+    
+    with col_btn2:
+        if st.button("📥 結果ダウンロード", use_container_width=True):
+            if st.session_state.batch_results:
+                result_json = json.dumps(st.session_state.batch_results, ensure_ascii=False, indent=2)
+                st.download_button(
+                    "💾 JSON保存",
+                    data=result_json,
+                    file_name=f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json"
+                )
+    
+    with col_btn3:
+        if st.button("🗑️ 結果クリア", use_container_width=True):
+            st.session_state.batch_results = []
+            st.success("✅ クリア完了")
+            st.rerun()
+    
+    # バッチ実行
+    if start_btn:
+        st.markdown("---")
+        st.markdown("## 🔄 実行中...")
+        
+        batch_results = []
+        success_count = 0
+        error_count = 0
+        
+        # プログレスバー
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # 統計表示
+        stats_container = st.container()
+        
+        # 結果詳細表示
+        if show_detail:
+            detail_container = st.expander("📋 詳細ログ", expanded=True)
+        
+        for idx, test_input in enumerate(test_cases):
+            # 進捗更新
+            progress = (idx + 1) / len(test_cases)
+            progress_bar.progress(progress)
+            status_text.markdown(f"**{idx + 1}/{len(test_cases)}** - `{test_input}`")
+            
+            result = {
+                "test_id": idx + 1,
+                "input": test_input,
+                "timestamp": datetime.now().isoformat(),
+                "edition": st.session_state.edition
+            }
+            
+            try:
+                # ハイブリッド版
+                hybrid_start = time.time()
+                normalized, model = asyncio.run(normalize_with_gemini(test_input))
+                
+                if normalized:
+                    result["normalized"] = normalized
+                    result["model"] = model
+                    
+                    candidates = search_commands(normalized, st.session_state.edition)
+                    
+                    if candidates:
+                        cmds = [c['cmd'] for c in candidates]
+                        result["hybrid_commands"] = cmds
+                        result["hybrid_time"] = time.time() - hybrid_start
+                    else:
+                        result["hybrid_error"] = "コマンド未検出"
+                else:
+                    result["hybrid_error"] = "正規化失敗"
+                
+                result["hybrid_time"] = time.time() - hybrid_start
+                
+                # AI単体版
+                ai_start = time.time()
+                ai_commands, ai_model = asyncio.run(generate_command_directly(test_input, st.session_state.edition))
+                
+                if ai_commands:
+                    result["ai_commands"] = [c.strip() for c in ai_commands.split('\n') if c.strip()]
+                    result["ai_time"] = time.time() - ai_start
+                else:
+                    result["ai_error"] = "生成失敗"
+                    result["ai_time"] = time.time() - ai_start
+                
+                # 成功カウント
+                if "hybrid_commands" in result or "ai_commands" in result:
+                    success_count += 1
+                else:
+                    error_count += 1
+                
+                # Google Sheetsに記録
+                if auto_log:
+                    log_research_data(
+                        test_input,
+                        result.get("normalized", ""),
+                        " | ".join(result.get("hybrid_commands", [])),
+                        " | ".join(result.get("ai_commands", [])),
+                        st.session_state.edition,
+                        hybrid_time=result.get("hybrid_time"),
+                        ai_time=result.get("ai_time"),
+                        hybrid_error=result.get("hybrid_error"),
+                        ai_error=result.get("ai_error"),
+                        used_model=result.get("model")
+                    )
+                
+                # 詳細表示
+                if show_detail:
+                    with detail_container:
+                        st.markdown(f"**#{idx + 1}** `{test_input}`")
+                        col_d1, col_d2 = st.columns(2)
+                        with col_d1:
+                            if "hybrid_commands" in result:
+                                for cmd in result["hybrid_commands"]:
+                                    st.code(cmd, language="bash")
+                        with col_d2:
+                            if "ai_commands" in result:
+                                for cmd in result["ai_commands"]:
+                                    st.code(cmd, language="bash")
+                        st.markdown("---")
+                
+            except Exception as e:
+                result["error"] = str(e)
+                error_count += 1
+            
+            batch_results.append(result)
+            
+            # 統計更新
+            with stats_container:
+                col_s1, col_s2, col_s3 = st.columns(3)
+                with col_s1:
+                    st.metric("処理済み", f"{idx + 1}/{len(test_cases)}")
+                with col_s2:
+                    st.metric("成功", success_count)
+                with col_s3:
+                    st.metric("エラー", error_count)
+            
+            # 待機
+            time.sleep(delay)
+        
+        # 結果保存
+        st.session_state.batch_results = batch_results
+        
+        # 完了メッセージ
+        progress_bar.progress(1.0)
+        status_text.markdown("✅ **完了！**")
+        
+        st.success(f"🎉 バッチ処理完了: {len(test_cases)}件処理（成功: {success_count}, エラー: {error_count}）")
+        
+        # 結果サマリー
+        st.markdown("---")
+        st.markdown("## 📊 結果サマリー")
+        
+        avg_hybrid_time = sum([r.get("hybrid_time", 0) for r in batch_results]) / len(batch_results)
+        avg_ai_time = sum([r.get("ai_time", 0) for r in batch_results]) / len(batch_results)
+        
+        col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
+        
+        with col_sum1:
+            st.metric("平均処理時間（ハイブリッド）", f"{avg_hybrid_time:.2f}秒")
+        with col_sum2:
+            st.metric("平均処理時間（AI単体）", f"{avg_ai_time:.2f}秒")
+        with col_sum3:
+            st.metric("成功率", f"{success_count/len(test_cases)*100:.1f}%")
+        with col_sum4:
+            st.metric("総処理時間", f"{sum([r.get('hybrid_time', 0) + r.get('ai_time', 0) for r in batch_results]):.1f}秒")
+
+# フッター
+st.markdown("---")
+st.markdown("*Minecraft実験システム - バッチ処理対応版*")
         """)
 
 # フッター
